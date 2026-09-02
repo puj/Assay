@@ -1,8 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "DeepDive",
-  "version": "0.4.0",
-  "description": "Tap sentences in ChatGPT/Claude, collect and annotate fragments, compose one deep-dive payload. Everything stays local.",
+  "name": "DigBoard: Deep Dive for AI Chats",
+  "version": "0.4.1",
+  "description": "Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive prompt. 100% local, no account.",
+  "homepage_url": "https://www.projectnothing.ai",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -10,15 +17,16 @@
         "https://chat.openai.com/*",
         "https://claude.ai/*"
       ],
-      "js": [
-        "deepdive.js"
-      ],
+      "js": ["deepdive.js"],
       "run_at": "document_idle"
     }
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "deepdive@projectnothing.ai",
+      "id": "digboard@projectnothing.ai",
+      "strict_min_version": "121.0"
+    },
+    "gecko_android": {
       "strict_min_version": "121.0"
     }
   }

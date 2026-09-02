@@ -23,10 +23,10 @@ if (core.includes('</script')) {
 
 const header = [
   '// ==UserScript==',
-  '// @name         DeepDive — collect fragments, synthesize together',
+  '// @name         DigBoard — deep dive for AI chats',
   '// @namespace    https://github.com/puj/Diveboard',
   '// @version      ' + version,
-  '// @description  Tap sentences in ChatGPT or Claude on mobile, collect several, annotate each (before or after the quote), then send them back as one payload — no boilerplate, no API. Export .md/.txt built in.',
+  '// @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.',
   '// @author       puj',
   '// @match        https://chatgpt.com/*',
   '// @match        https://chat.openai.com/*',
@@ -59,8 +59,8 @@ fs.writeFileSync(path.join(dir, 'install.html'), out);
 
 let zipNote = 'zip tool not found — skipped extension zip';
 try {
-  execSync('cd "' + path.join(dir, 'extension') + '" && zip -q -X -r ../deepdive-extension.zip manifest.json deepdive.js', { stdio: 'pipe' });
-  zipNote = 'deepdive-extension.zip';
+  execSync('cd "' + path.join(dir, 'extension') + '" && rm -f ../digboard-extension.zip && zip -q -X -r ../digboard-extension.zip manifest.json deepdive.js icons', { stdio: 'pipe' });
+  zipNote = 'digboard-extension.zip';
 } catch (e) {}
 
 console.log('v' + version + ': deepdive.user.js, extension/deepdive.js, install.html (' +

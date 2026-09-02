@@ -1,4 +1,4 @@
-# DeepDive — tap → collect → synthesize
+# DigBoard — tap → collect → deep dive (formerly DeepDive)
 
 Editorial selection over AI conversations, on your phone. While reading a
 ChatGPT (or Claude) response in a mobile browser, **tap a word** — it
@@ -30,7 +30,7 @@ for a shared cross-conversation list later.
 | `src/deepdive.core.js` | The single source of truth — all logic and UI. |
 | `deepdive.user.js` | Generated: userscript header + core (Tampermonkey/Violentmonkey). |
 | `extension/` | Generated content script + `manifest.json` (MV3, Chrome + Firefox). |
-| `deepdive-extension.zip` | Generated extension package for store submission / sideload. |
+| `digboard-extension.zip` | Generated extension package for store submission / sideload. |
 | `install.template.html` | Mobile install page with a `__USERSCRIPT_SOURCE__` placeholder. |
 | `install.html` | Generated install page; it also derives the bookmarklet from the embedded source. |
 | `build.js` | Regenerates all of the above: `node build.js`. |
@@ -42,7 +42,7 @@ for a shared cross-conversation list later.
 2. **Bookmarklet** (any browser, incl. Chrome Android) — zero install, tap
    once per visit. Generated on the install page from the same source.
 3. **WebExtension** — for distribution. Load `extension/` unpacked in desktop
-   Chrome/Edge, or submit `deepdive-extension.zip` to Firefox Add-ons (free
+   Chrome/Edge, or submit `digboard-extension.zip` to Firefox Add-ons (free
    signing; then it installs normally on Firefox Android) and the
    Chrome/Edge stores.
 
