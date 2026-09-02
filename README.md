@@ -18,8 +18,10 @@ the sheet track `visualViewport`, so the on-screen keyboard never covers
 them.
 
 No API keys, no backend, no account. One core payload, three delivery
-formats. Fragments live in the browser's `localStorage`, per site, and
-persist across responses and conversations.
+formats. Fragments live in the browser's `localStorage`, scoped **per
+conversation** (keyed by the `/c/<id>` or `/chat/<id>` URL; a batch started
+in a brand-new chat follows it once the id appears). The keying leaves room
+for a shared cross-conversation list later.
 
 ## Layout
 

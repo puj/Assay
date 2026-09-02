@@ -4,9 +4,10 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.3.1';
-  var STORE_KEY = 'deepdive.fragments.v1';
-  var BACKUP_KEY = 'deepdive.lastBatch.v1';
+  var VERSION = '0.4.0';
+  var MAP_KEY = 'deepdive.byConvo.v1';
+  var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
+  var LEGACY_KEY = 'deepdive.fragments.v1';
   var MIN_SEL_LEN = 4;
 
   // Rotating highlight colors: pending selection previews the color the next
@@ -24,13 +25,46 @@
   function loadJSON(key, fallback) {
     try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (e) { return fallback; }
   }
-  var fragments = loadJSON(STORE_KEY, []);
-  fragments.forEach(function (f, i) {
-    if (!f.notePos) f.notePos = 'post';
-    if (typeof f.colorIdx !== 'number') f.colorIdx = i % PALETTE.length;
-  });
+  // Each conversation keeps its own fragment list, keyed "<host>:<convo id>"
+  // ("<host>:draft" before a brand-new chat gets its id — that batch follows
+  // the chat once the id appears). A shared cross-conversation list can layer
+  // on top of this keying later.
+  function convoKey() {
+    var m = location.pathname.match(/\/(?:c|chat)\/([A-Za-z0-9-]+)/);
+    return location.hostname + ':' + (m ? m[1] : 'draft');
+  }
+  function normalize(list) {
+    list.forEach(function (f, i) {
+      if (!f.notePos) f.notePos = 'post';
+      if (typeof f.colorIdx !== 'number') f.colorIdx = i % PALETTE.length;
+    });
+    return list;
+  }
+  function saveMap(key, map) {
+    try { localStorage.setItem(key, JSON.stringify(map)); } catch (e) {}
+  }
+  var convo = convoKey();
+  var byConvo = loadJSON(MAP_KEY, {});
+  // One-time migration of the 0.3.x single global list into this conversation.
+  var legacy = loadJSON(LEGACY_KEY, null);
+  if (legacy && legacy.length) {
+    byConvo[convo] = (byConvo[convo] || []).concat(legacy);
+    saveMap(MAP_KEY, byConvo);
+    try { localStorage.removeItem(LEGACY_KEY); } catch (e) {}
+  }
+  var fragments = normalize(byConvo[convo] || []);
   function persist() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(fragments)); } catch (e) {}
+    var map = loadJSON(MAP_KEY, {});
+    if (fragments.length) map[convo] = fragments; else delete map[convo];
+    saveMap(MAP_KEY, map);
+  }
+  function loadBackup() {
+    return loadJSON(BACKUP_MAP_KEY, {})[convo] || null;
+  }
+  function saveBackup() {
+    var map = loadJSON(BACKUP_MAP_KEY, {});
+    map[convo] = fragments;
+    saveMap(BACKUP_MAP_KEY, map);
   }
 
   var sheetOpen = false;
@@ -168,6 +202,32 @@
   attach();
   // SPA route changes occasionally rebuild <body>; make sure our UI survives.
   setInterval(attach, 2000);
+
+  // SPA navigation between conversations never reloads the page, so watch the
+  // URL and swap in the right fragment list when it changes.
+  function checkRoute() {
+    var k = convoKey();
+    if (k === convo) return;
+    var prev = convo;
+    convo = k;
+    clearPending();
+    marks = [];
+    hideChip();
+    var map = loadJSON(MAP_KEY, {});
+    var list = map[k] || [];
+    // A batch collected in a fresh chat follows it once it gets a real id.
+    if (!list.length && prev === location.hostname + ':draft' && map[prev] && map[prev].length) {
+      list = map[prev];
+      delete map[prev];
+      map[k] = list;
+      saveMap(MAP_KEY, map);
+    }
+    fragments = normalize(list);
+    updatePill();
+    redraw();
+    if (sheetOpen) renderList();
+  }
+  setInterval(checkRoute, 800);
 
   var $ = function (id) { return root.getElementById(id); };
   var chip = $('chip'), pill = $('pill'), sheet = $('sheet');
@@ -683,19 +743,15 @@
     if (!fragments.length) {
       var empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = 'Nothing collected yet. Tap a word in a reply — tap the highlight to widen it (word → sentence → paragraph), tap nearby words to grow it — or long-press to select any span.';
-      var backup = loadJSON(BACKUP_KEY, null);
+      empty.textContent = 'Nothing collected in this conversation yet. Tap a word in a reply — tap the highlight to widen it (word → sentence → paragraph), tap nearby words to grow it — or long-press to select any span.';
+      var backup = loadBackup();
       if (backup && backup.length) {
         empty.appendChild(document.createElement('br'));
         var restore = document.createElement('button');
         restore.className = 'restore';
         restore.textContent = 'Restore last batch (' + backup.length + ')';
         restore.addEventListener('click', function () {
-          fragments = backup;
-          fragments.forEach(function (f, i) {
-            if (!f.notePos) f.notePos = 'post';
-            if (typeof f.colorIdx !== 'number') f.colorIdx = i % PALETTE.length;
-          });
+          fragments = normalize(backup);
           persist(); updatePill(); renderList();
         });
         empty.appendChild(restore);
@@ -772,7 +828,7 @@
 
   $('clearBtn').addEventListener('click', function () {
     if (!fragments.length) { closeSheet(); return; }
-    try { localStorage.setItem(BACKUP_KEY, JSON.stringify(fragments)); } catch (e) {}
+    saveBackup();
     fragments = [];
     marks = [];
     persist(); updatePill(); renderList(); redraw();
@@ -921,7 +977,7 @@
   }
 
   function finishBatch(msg) {
-    try { localStorage.setItem(BACKUP_KEY, JSON.stringify(fragments)); } catch (e) {}
+    saveBackup();
     fragments = [];
     marks = [];
     persist(); updatePill(); closeSheet(); redraw();
