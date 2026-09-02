@@ -214,7 +214,7 @@
       <p><span class="k">Tap a word</span> in any reply &mdash; it highlights, with a small bar: <span class="k">&#xFF0B; Add</span> collects it, <span class="k">&#x270E; Note</span> annotates it now (choose whether the note sits <i>before</i> or <i>after</i> the quote). <span class="k">Tap the highlight</span> to widen it &mdash; word &rarr; sentence &rarr; paragraph &rarr; back to the word. <span class="k">Tap words next to it</span> to grow the selection in that direction, word by word. Long-press selection still works for arbitrary spans.</p>
       <p>Each fragment gets the next of six rotating highlight colors, and collected marks stay tinted on the page while you keep reading. Tap the <span class="k">Deep dive</span> pill to flip between the fragment view and the conversation &mdash; the page stays scrollable behind it and taps keep collecting. In the list: annotate later, flip a note between before/after, delete strays, expand truncated text with a tap. Each conversation keeps its own list (fragments collected in a brand-new chat follow it once it gets its address); a shared cross-conversation list may come later.</p>
       <p><span class="k">&#x2197; To composer</span> writes just your fragments and annotations into the composer &mdash; no added prompt text; your annotations carry the intent. Review, then send. If injection is ever blocked, it lands on your clipboard instead.</p>
-      <p><span class="k">&#x2B07; .md</span> / <span class="k">&#x2B07; .txt</span> download the current batch to your phone without sending or clearing anything.</p>
+      <p><span class="k">&#x2B07; .md</span> / <span class="k">&#x2B07; .txt</span> download the <b>entire current conversation</b> to your phone, with your collected fragments and notes appended &mdash; nothing is sent or cleared. On a very long thread, scroll to the top first: the sites load older messages lazily, and the export captures what&rsquo;s on the page.</p>
       <p><span class="k">Clear</span> and sent batches are restorable from the empty sheet, so nothing is lost by accident.</p>
     </div>
   </section>
@@ -226,7 +226,7 @@
 // ==UserScript==
 // @name         DigBoard — deep dive for AI chats
 // @namespace    https://github.com/puj/Diveboard
-// @version      0.4.1
+// @version      0.5.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @match        https://chatgpt.com/*
@@ -242,7 +242,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.4.1';
+  var VERSION = '0.5.0';
   var MAP_KEY = 'deepdive.byConvo.v1';
   var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -562,8 +562,6 @@
       if (listEl.querySelector('.frag')) {
         listEl.appendChild(buildFragItem(fragments[fragments.length - 1], fragments.length - 1));
         $('goBtn').disabled = false;
-        $('mdBtn').disabled = false;
-        $('txtBtn').disabled = false;
         positionPill();
       } else {
         renderList();
@@ -996,14 +994,10 @@
       }
       listEl.appendChild(empty);
       $('goBtn').disabled = true;
-      $('mdBtn').disabled = true;
-      $('txtBtn').disabled = true;
       positionPill();
       return;
     }
     $('goBtn').disabled = false;
-    $('mdBtn').disabled = false;
-    $('txtBtn').disabled = false;
     fragments.forEach(function (f, i) {
       listEl.appendChild(buildFragItem(f, i));
     });
@@ -1102,24 +1096,108 @@
     return niceStamp().replace(' ', '-').replace(':', '');
   }
 
-  function buildMarkdown() {
-    var lines = ['# Fragments — ' + location.hostname + ' — ' + niceStamp(), ''];
+  // -------------------------------------------- whole-conversation capture
+  function textOf(el) {
+    return (el.innerText || '').replace(/ /g, ' ').trim();
+  }
+
+  // Light DOM→markdown for rendered chat messages: block structure only
+  // (paragraphs, headings, lists, code fences, quotes); inline styling is
+  // dropped. Robust beats faithful here.
+  function serializeBlocks(rootEl) {
+    var out = [];
+    function pushText(s) { if (s) out.push(s); }
+    function walk(node) {
+      if (node.nodeType !== 1 || node === host) return;
+      var tag = node.tagName;
+      var h = /^H([1-6])$/.exec(tag);
+      if (h) { pushText(new Array(+h[1] + 1).join('#') + ' ' + textOf(node)); return; }
+      if (tag === 'P') { pushText(textOf(node)); return; }
+      if (tag === 'PRE') {
+        var code = node.querySelector('code');
+        var t = ((code || node).innerText || '').replace(/\s+$/, '');
+        if (t) out.push('```\n' + t + '\n```');
+        return;
+      }
+      if (tag === 'UL' || tag === 'OL') {
+        var items = node.querySelectorAll(':scope > li');
+        Array.prototype.forEach.call(items, function (li, i) {
+          pushText((tag === 'OL' ? (i + 1) + '. ' : '- ') + textOf(li).replace(/\n+/g, ' '));
+        });
+        return;
+      }
+      if (tag === 'BLOCKQUOTE') {
+        var q = textOf(node);
+        if (q) out.push(q.split('\n').map(function (l) { return '> ' + l; }).join('\n'));
+        return;
+      }
+      if (tag === 'TABLE') { pushText(textOf(node)); return; }
+      var child = node.firstChild;
+      while (child) { walk(child); child = child.nextSibling; }
+    }
+    walk(rootEl);
+    if (!out.length) pushText(textOf(rootEl));
+    return out;
+  }
+
+  function getConversation() {
+    var nodes = document.querySelectorAll('[data-message-author-role]');
+    if (nodes.length) {
+      return Array.prototype.map.call(nodes, function (n) {
+        return { role: n.getAttribute('data-message-author-role') === 'user' ? 'You' : 'Assistant', el: n };
+      });
+    }
+    nodes = document.querySelectorAll('[data-testid="user-message"], .font-claude-message');
+    if (nodes.length) {
+      return Array.prototype.map.call(nodes, function (n) {
+        return { role: (' ' + n.className + ' ').indexOf(' font-claude-message ') !== -1 ? 'Assistant' : 'You', el: n };
+      });
+    }
+    return null;
+  }
+
+  function convoTitle() {
+    var t = (document.title || '').replace(/\s*[—|–-]\s*(ChatGPT|Claude).*$/i, '').trim();
+    return t || 'Conversation';
+  }
+
+  function fragmentAppendixMd(lines) {
+    lines.push('---', '', '## Collected fragments (' + fragments.length + ')', '');
     fragments.forEach(function (f, i) {
       var note = (f.note || '').trim();
-      lines.push('## ' + (i + 1));
-      lines.push('');
-      if (note && f.notePos === 'pre') {
-        lines.push('*' + note + ':*');
-        lines.push('');
-      }
+      lines.push('### ' + (i + 1), '');
+      if (note && f.notePos === 'pre') lines.push('*' + note + ':*', '');
       f.text.trim().split('\n').forEach(function (l) { lines.push('> ' + l); });
-      if (note && f.notePos !== 'pre') {
-        lines.push('');
-        lines.push('→ *' + note + '*');
-      }
+      if (note && f.notePos !== 'pre') lines.push('', '→ *' + note + '*');
       lines.push('');
     });
+  }
+
+  function buildConversationMarkdown(turns) {
+    if (!turns && !fragments.length) return null;
+    var lines = ['# ' + convoTitle(), '', '_' + location.hostname + ' — ' + niceStamp() + '_', ''];
+    if (turns) {
+      turns.forEach(function (t) {
+        lines.push('## ' + t.role, '');
+        serializeBlocks(t.el).forEach(function (b) { lines.push(b, ''); });
+      });
+    }
+    if (fragments.length) fragmentAppendixMd(lines);
     return lines.join('\n');
+  }
+
+  function buildConversationText(turns) {
+    if (!turns && !fragments.length) return null;
+    var parts = [convoTitle() + ' — ' + location.hostname + ' — ' + niceStamp()];
+    if (turns) {
+      turns.forEach(function (t) {
+        parts.push(t.role + ':\n' + serializeBlocks(t.el).join('\n\n'));
+      });
+    }
+    if (fragments.length) {
+      parts.push('--- Collected fragments ---\n\n' + buildPayload());
+    }
+    return parts.join('\n\n') + '\n';
   }
 
   function download(name, text, mime) {
@@ -1139,16 +1217,18 @@
     }
   }
 
-  $('mdBtn').addEventListener('click', function () {
-    if (!fragments.length) return;
-    var ok = download('deepdive-' + fileStamp() + '.md', buildMarkdown(), 'text/markdown');
-    toast(ok ? 'Saved .md' : 'Download blocked by the browser');
-  });
-  $('txtBtn').addEventListener('click', function () {
-    if (!fragments.length) return;
-    var ok = download('deepdive-' + fileStamp() + '.txt', buildPayload() + '\n', 'text/plain');
-    toast(ok ? 'Saved .txt' : 'Download blocked by the browser');
-  });
+  function exportConversation(ext, mime) {
+    var turns = getConversation();
+    var content = ext === 'md' ? buildConversationMarkdown(turns) : buildConversationText(turns);
+    if (!content) { toast('Nothing to export yet'); return; }
+    var ok = download('digboard-' + fileStamp() + '.' + ext, content, mime);
+    if (!ok) { toast('Download blocked by the browser'); return; }
+    toast(turns
+      ? 'Saved conversation' + (fragments.length ? ' + fragments' : '') + ' (.' + ext + ')'
+      : 'Transcript not found — saved fragments only (.' + ext + ')', 2400);
+  }
+  $('mdBtn').addEventListener('click', function () { exportConversation('md', 'text/markdown'); });
+  $('txtBtn').addEventListener('click', function () { exportConversation('txt', 'text/plain'); });
 
   // ------------------------------------------------------------- composing
   function findComposer() {
@@ -1251,7 +1331,9 @@
       return {
         pending: pending ? { start: pending.start, end: pending.end, scope: pending.scope, text: pendingText() } : null,
         fragments: fragments.map(function (f) { return { text: f.text, note: f.note, notePos: f.notePos, colorIdx: f.colorIdx }; }),
-        marks: marks.length
+        marks: marks.length,
+        exportMd: buildConversationMarkdown(getConversation()),
+        exportTxt: buildConversationText(getConversation())
       };
     }
   };

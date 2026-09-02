@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DigBoard: Deep Dive for AI Chats",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive prompt. 100% local, no account.",
   "homepage_url": "https://www.projectnothing.ai",
   "icons": {
@@ -17,7 +17,9 @@
         "https://chat.openai.com/*",
         "https://claude.ai/*"
       ],
-      "js": ["deepdive.js"],
+      "js": [
+        "deepdive.js"
+      ],
       "run_at": "document_idle"
     }
   ],
