@@ -161,7 +161,7 @@
     <span class="demo-chip">&#xFF0B; Add &nbsp;&#x270E; Note &nbsp;&#x2715;</span>
     <span class="demo-pill">Deep dive <span class="n">3</span></span>
   </div>
-  <p class="flow">Works on <b>chatgpt.com</b> and <b>claude.ai</b> in a mobile browser. Fragments persist across responses and conversations, stored only on your phone, and export to <b>.md</b>/<b>.txt</b> at any time. Your existing subscription does all the inference. Three ways to run it &mdash; all the same payload.</p>
+  <p class="flow">Works on <b>chatgpt.com</b> and <b>claude.ai</b> in a mobile browser. Each conversation keeps its own fragment list, stored only on your phone and persisting across visits; export to <b>.md</b>/<b>.txt</b> at any time. Your existing subscription does all the inference. Three ways to run it &mdash; all the same payload.</p>
 
   <section>
     <h2>Firefox + Tampermonkey <span class="tag rec">Recommended</span></h2>
@@ -212,7 +212,7 @@
     <h2>Using it</h2>
     <div class="usage">
       <p><span class="k">Tap a word</span> in any reply &mdash; it highlights, with a small bar: <span class="k">&#xFF0B; Add</span> collects it, <span class="k">&#x270E; Note</span> annotates it now (choose whether the note sits <i>before</i> or <i>after</i> the quote). <span class="k">Tap the highlight</span> to widen it &mdash; word &rarr; sentence &rarr; paragraph &rarr; back to the word. <span class="k">Tap words next to it</span> to grow the selection in that direction, word by word. Long-press selection still works for arbitrary spans.</p>
-      <p>Each fragment gets the next of six rotating highlight colors, and collected marks stay tinted on the page while you keep reading. Tap the <span class="k">Deep dive</span> pill to flip between the fragment view and the conversation &mdash; the page stays scrollable behind it and taps keep collecting. In the list: annotate later, flip a note between before/after, delete strays, expand truncated text with a tap. Fragments accumulate across replies and conversations.</p>
+      <p>Each fragment gets the next of six rotating highlight colors, and collected marks stay tinted on the page while you keep reading. Tap the <span class="k">Deep dive</span> pill to flip between the fragment view and the conversation &mdash; the page stays scrollable behind it and taps keep collecting. In the list: annotate later, flip a note between before/after, delete strays, expand truncated text with a tap. Each conversation keeps its own list (fragments collected in a brand-new chat follow it once it gets its address); a shared cross-conversation list may come later.</p>
       <p><span class="k">&#x2197; To composer</span> writes just your fragments and annotations into the composer &mdash; no added prompt text; your annotations carry the intent. Review, then send. If injection is ever blocked, it lands on your clipboard instead.</p>
       <p><span class="k">&#x2B07; .md</span> / <span class="k">&#x2B07; .txt</span> download the current batch to your phone without sending or clearing anything.</p>
       <p><span class="k">Clear</span> and sent batches are restorable from the empty sheet, so nothing is lost by accident.</p>
@@ -226,7 +226,7 @@
 // ==UserScript==
 // @name         DeepDive — collect fragments, synthesize together
 // @namespace    https://github.com/puj/Diveboard
-// @version      0.3.1
+// @version      0.4.0
 // @description  Tap sentences in ChatGPT or Claude on mobile, collect several, annotate each (before or after the quote), then send them back as one payload — no boilerplate, no API. Export .md/.txt built in.
 // @author       puj
 // @match        https://chatgpt.com/*
@@ -242,9 +242,10 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.3.1';
-  var STORE_KEY = 'deepdive.fragments.v1';
-  var BACKUP_KEY = 'deepdive.lastBatch.v1';
+  var VERSION = '0.4.0';
+  var MAP_KEY = 'deepdive.byConvo.v1';
+  var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
+  var LEGACY_KEY = 'deepdive.fragments.v1';
   var MIN_SEL_LEN = 4;
 
   // Rotating highlight colors: pending selection previews the color the next
@@ -262,13 +263,46 @@
   function loadJSON(key, fallback) {
     try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (e) { return fallback; }
   }
-  var fragments = loadJSON(STORE_KEY, []);
-  fragments.forEach(function (f, i) {
-    if (!f.notePos) f.notePos = 'post';
-    if (typeof f.colorIdx !== 'number') f.colorIdx = i % PALETTE.length;
-  });
+  // Each conversation keeps its own fragment list, keyed "<host>:<convo id>"
+  // ("<host>:draft" before a brand-new chat gets its id — that batch follows
+  // the chat once the id appears). A shared cross-conversation list can layer
+  // on top of this keying later.
+  function convoKey() {
+    var m = location.pathname.match(/\/(?:c|chat)\/([A-Za-z0-9-]+)/);
+    return location.hostname + ':' + (m ? m[1] : 'draft');
+  }
+  function normalize(list) {
+    list.forEach(function (f, i) {
+      if (!f.notePos) f.notePos = 'post';
+      if (typeof f.colorIdx !== 'number') f.colorIdx = i % PALETTE.length;
+    });
+    return list;
+  }
+  function saveMap(key, map) {
+    try { localStorage.setItem(key, JSON.stringify(map)); } catch (e) {}
+  }
+  var convo = convoKey();
+  var byConvo = loadJSON(MAP_KEY, {});
+  // One-time migration of the 0.3.x single global list into this conversation.
+  var legacy = loadJSON(LEGACY_KEY, null);
+  if (legacy && legacy.length) {
+    byConvo[convo] = (byConvo[convo] || []).concat(legacy);
+    saveMap(MAP_KEY, byConvo);
+    try { localStorage.removeItem(LEGACY_KEY); } catch (e) {}
+  }
+  var fragments = normalize(byConvo[convo] || []);
   function persist() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(fragments)); } catch (e) {}
+    var map = loadJSON(MAP_KEY, {});
+    if (fragments.length) map[convo] = fragments; else delete map[convo];
+    saveMap(MAP_KEY, map);
+  }
+  function loadBackup() {
+    return loadJSON(BACKUP_MAP_KEY, {})[convo] || null;
+  }
+  function saveBackup() {
+    var map = loadJSON(BACKUP_MAP_KEY, {});
+    map[convo] = fragments;
+    saveMap(BACKUP_MAP_KEY, map);
   }
 
   var sheetOpen = false;
@@ -406,6 +440,32 @@
   attach();
   // SPA route changes occasionally rebuild <body>; make sure our UI survives.
   setInterval(attach, 2000);
+
+  // SPA navigation between conversations never reloads the page, so watch the
+  // URL and swap in the right fragment list when it changes.
+  function checkRoute() {
+    var k = convoKey();
+    if (k === convo) return;
+    var prev = convo;
+    convo = k;
+    clearPending();
+    marks = [];
+    hideChip();
+    var map = loadJSON(MAP_KEY, {});
+    var list = map[k] || [];
+    // A batch collected in a fresh chat follows it once it gets a real id.
+    if (!list.length && prev === location.hostname + ':draft' && map[prev] && map[prev].length) {
+      list = map[prev];
+      delete map[prev];
+      map[k] = list;
+      saveMap(MAP_KEY, map);
+    }
+    fragments = normalize(list);
+    updatePill();
+    redraw();
+    if (sheetOpen) renderList();
+  }
+  setInterval(checkRoute, 800);
 
   var $ = function (id) { return root.getElementById(id); };
   var chip = $('chip'), pill = $('pill'), sheet = $('sheet');
@@ -921,19 +981,15 @@
     if (!fragments.length) {
       var empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = 'Nothing collected yet. Tap a word in a reply — tap the highlight to widen it (word → sentence → paragraph), tap nearby words to grow it — or long-press to select any span.';
-      var backup = loadJSON(BACKUP_KEY, null);
+      empty.textContent = 'Nothing collected in this conversation yet. Tap a word in a reply — tap the highlight to widen it (word → sentence → paragraph), tap nearby words to grow it — or long-press to select any span.';
+      var backup = loadBackup();
       if (backup && backup.length) {
         empty.appendChild(document.createElement('br'));
         var restore = document.createElement('button');
         restore.className = 'restore';
         restore.textContent = 'Restore last batch (' + backup.length + ')';
         restore.addEventListener('click', function () {
-          fragments = backup;
-          fragments.forEach(function (f, i) {
-            if (!f.notePos) f.notePos = 'post';
-            if (typeof f.colorIdx !== 'number') f.colorIdx = i % PALETTE.length;
-          });
+          fragments = normalize(backup);
           persist(); updatePill(); renderList();
         });
         empty.appendChild(restore);
@@ -1010,7 +1066,7 @@
 
   $('clearBtn').addEventListener('click', function () {
     if (!fragments.length) { closeSheet(); return; }
-    try { localStorage.setItem(BACKUP_KEY, JSON.stringify(fragments)); } catch (e) {}
+    saveBackup();
     fragments = [];
     marks = [];
     persist(); updatePill(); renderList(); redraw();
@@ -1159,7 +1215,7 @@
   }
 
   function finishBatch(msg) {
-    try { localStorage.setItem(BACKUP_KEY, JSON.stringify(fragments)); } catch (e) {}
+    saveBackup();
     fragments = [];
     marks = [];
     persist(); updatePill(); closeSheet(); redraw();
