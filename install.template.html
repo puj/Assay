@@ -158,7 +158,7 @@
 
   <div class="demo" aria-hidden="true">
     <p class="demo-text">The garbage collector becomes the allocator of life. Creators rarely bear the cost of rejection. <mark>The missing primitive is not annotation; it&rsquo;s accumulating several annotations before responding.</mark> Selection is probably the higher-bandwidth input modality.</p>
-    <span class="demo-chip">&#xFF0B; Add &nbsp;&#x270E; Note &nbsp;&#xB6; &nbsp;&#x2715;</span>
+    <span class="demo-chip">&#xFF0B; Add &nbsp;&#x270E; Note &nbsp;&#x2715;</span>
     <span class="demo-pill">Deep dive <span class="n">3</span></span>
   </div>
   <p class="flow">Works on <b>chatgpt.com</b> and <b>claude.ai</b> in a mobile browser. Fragments persist across responses and conversations, stored only on your phone, and export to <b>.md</b>/<b>.txt</b> at any time. Your existing subscription does all the inference. Three ways to run it &mdash; all the same payload.</p>
@@ -175,7 +175,7 @@
         <p class="btn-note" id="scriptMeta"></p>
       </li>
       <li>Menu <code>&#8942;</code> &rarr; Add-ons &rarr; <b>Tampermonkey</b> &rarr; open its <b>Dashboard</b> &rarr; tap <b>+</b> (create new script) &rarr; long-press in the editor, <b>Select all</b>, <b>Paste</b> &rarr; save (file icon or Ctrl-S).</li>
-      <li>Open <a href="https://chatgpt.com">chatgpt.com</a> in Firefox and sign in. Tap any sentence in a reply &mdash; it highlights and the <b>&#xFF0B; Add</b> bar appears.</li>
+      <li>Open <a href="https://chatgpt.com">chatgpt.com</a> in Firefox and sign in. Tap any word in a reply &mdash; it highlights and the <b>&#xFF0B; Add</b> bar appears; tap the highlight to widen it.</li>
     </ol>
     <details>
       <summary>Copy button not working? View the source</summary>
@@ -199,20 +199,20 @@
 
   <section>
     <h2>Extension package <span class="tag alt">For distribution</span></h2>
-    <p class="sub">The same payload as a WebExtension &mdash; for sharing with others without a userscript manager, and for store submission later.</p>
+    <p class="sub">The same payload as a WebExtension &mdash; no userscript manager needed. <code>extension/</code> in the repo holds the source; <code>deepdive-extension.zip</code> is the packaged build.</p>
     <ol class="steps">
-      <li><code>extension/</code> in the repo holds <code>manifest.json</code> + the content script; <code>deepdive-extension.zip</code> is the packaged build.</li>
-      <li>Desktop Chrome/Edge: <code>chrome://extensions</code> &rarr; Developer mode &rarr; <b>Load unpacked</b> &rarr; pick the <code>extension/</code> folder.
-        <small>Chrome on Android doesn&rsquo;t run extensions &mdash; that&rsquo;s why mobile routes through Firefox or the bookmarklet.</small></li>
-      <li>To hand it to others with one tap: submit the zip to Firefox Add-ons (free signing; installs normally on Firefox Android) or the Chrome/Edge stores for desktop.</li>
+      <li><b>Desktop Chrome/Edge, today, free:</b> <code>chrome://extensions</code> &rarr; Developer mode &rarr; <b>Load unpacked</b> &rarr; pick the <code>extension/</code> folder.
+        <small>Chrome on Android doesn&rsquo;t run extensions at all &mdash; that&rsquo;s why mobile routes through Firefox or the bookmarklet.</small></li>
+      <li><b>Real Firefox Android extension:</b> create a free developer account at <a href="https://addons.mozilla.org/developers/">addons.mozilla.org</a> (no fee, unlike Chrome&rsquo;s one-time $5) and submit <code>deepdive-extension.zip</code> as a <b>listed</b> add-on. Automated review typically approves simple extensions within <b>minutes to hours</b>; a follow-up human review can occasionally take days. Once live, it installs on regular Firefox for Android with one tap from its add-on page &mdash; set the listing&rsquo;s visibility to <b>Invisible</b> so only people with the direct link find it.</li>
+      <li><b>Private alternative (no listing):</b> submit as <b>unlisted/self-distributed</b> instead &mdash; signing is automated, usually minutes &mdash; and you get a signed <code>.xpi</code> file. On Firefox for Android: Settings &rarr; About Firefox &rarr; tap the logo five times to unlock the debug menu, then Settings &rarr; <b>Install extension from file</b>.</li>
     </ol>
   </section>
 
   <section>
     <h2>Using it</h2>
     <div class="usage">
-      <p><span class="k">Tap a sentence</span> in any reply &mdash; it highlights, with a small bar: <span class="k">&#xFF0B; Add</span> collects it, <span class="k">&#x270E; Note</span> annotates it now (choose whether the note sits <i>before</i> or <i>after</i> the quote), <span class="k">&#xB6;</span> grabs the whole paragraph. <span class="k">Tap the highlight again</span> to extend it one sentence at a time. Long-press selection still works for arbitrary spans.</p>
-      <p>Tap the <span class="k">Deep dive</span> pill to review: annotate later, flip a note between before/after, delete strays, expand truncated text with a tap. Fragments accumulate across replies and conversations.</p>
+      <p><span class="k">Tap a word</span> in any reply &mdash; it highlights, with a small bar: <span class="k">&#xFF0B; Add</span> collects it, <span class="k">&#x270E; Note</span> annotates it now (choose whether the note sits <i>before</i> or <i>after</i> the quote). <span class="k">Tap the highlight</span> to widen it &mdash; word &rarr; sentence &rarr; paragraph &rarr; back to the word. <span class="k">Tap words next to it</span> to grow the selection in that direction, word by word. Long-press selection still works for arbitrary spans.</p>
+      <p>Each fragment gets the next of six rotating highlight colors, and collected marks stay tinted on the page while you keep reading. Tap the <span class="k">Deep dive</span> pill to flip between the fragment view and the conversation &mdash; the page stays scrollable behind it and taps keep collecting. In the list: annotate later, flip a note between before/after, delete strays, expand truncated text with a tap. Fragments accumulate across replies and conversations.</p>
       <p><span class="k">&#x2197; To composer</span> writes just your fragments and annotations into the composer &mdash; no added prompt text; your annotations carry the intent. Review, then send. If injection is ever blocked, it lands on your clipboard instead.</p>
       <p><span class="k">&#x2B07; .md</span> / <span class="k">&#x2B07; .txt</span> download the current batch to your phone without sending or clearing anything.</p>
       <p><span class="k">Clear</span> and sent batches are restorable from the empty sheet, so nothing is lost by accident.</p>

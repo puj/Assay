@@ -1,15 +1,21 @@
 # DeepDive — tap → collect → synthesize
 
 Editorial selection over AI conversations, on your phone. While reading a
-ChatGPT (or Claude) response in a mobile browser, **tap a sentence** — it
-highlights with a small action bar. Tap the highlight again to extend it one
-sentence at a time, `¶` grabs the whole paragraph, long-press selection still
-works for arbitrary spans. **＋ Add** collects; **✎ Note** annotates now, with
-the note placed *before* or *after* the quote; the sheet lets you annotate
-later. **↗ To composer** writes just the fragments and annotations into the
-site's composer — no wrapper prompt, the annotations carry the intent — for
-you to review and send. **⭳ .md / ⭳ .txt** download the batch locally at any
-time.
+ChatGPT (or Claude) response in a mobile browser, **tap a word** — it
+highlights with a small action bar. Tap the highlight to widen the scope
+(word → sentence → paragraph → back to the word); tap words outside the
+highlight to grow the selection in that direction, word by word; long-press
+selection still works for arbitrary spans. **＋ Add** collects; **✎ Note**
+annotates now, with the note placed *before* or *after* the quote; the sheet
+lets you annotate later. Each fragment takes the next of six rotating
+highlight colors and its mark stays tinted on the page for the session. The
+fragment sheet is non-modal — the pill toggles it while the conversation
+stays scrollable, and taps keep collecting. **↗ To composer** writes just
+the fragments and annotations into the site's composer — no wrapper prompt,
+the annotations carry the intent — for you to review and send.
+**⭳ .md / ⭳ .txt** download the batch locally at any time. Note controls and
+the sheet track `visualViewport`, so the on-screen keyboard never covers
+them.
 
 No API keys, no backend, no account. One core payload, three delivery
 formats. Fragments live in the browser's `localStorage`, per site, and
