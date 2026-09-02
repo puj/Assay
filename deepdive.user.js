@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DeepDive — collect fragments, synthesize together
 // @namespace    https://github.com/puj/Diveboard
-// @version      0.2.0
+// @version      0.3.0
 // @description  Tap sentences in ChatGPT or Claude on mobile, collect several, annotate each (before or after the quote), then send them back as one payload — no boilerplate, no API. Export .md/.txt built in.
 // @author       puj
 // @match        https://chatgpt.com/*
@@ -17,16 +17,31 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.2.0';
+  var VERSION = '0.3.0';
   var STORE_KEY = 'deepdive.fragments.v1';
   var BACKUP_KEY = 'deepdive.lastBatch.v1';
-  var MIN_LEN = 4;
+  var MIN_SEL_LEN = 4;
+
+  // Rotating highlight colors: pending selection previews the color the next
+  // fragment will get; collected marks stay on the page in the same hue.
+  var PALETTE = [
+    { rgb: '56,189,248', badgeBg: '#bae6fd', badgeInk: '#075985' },  // sky
+    { rgb: '251,191,36', badgeBg: '#fde68a', badgeInk: '#92400e' },  // amber
+    { rgb: '74,222,128', badgeBg: '#bbf7d0', badgeInk: '#166534' },  // green
+    { rgb: '244,114,182', badgeBg: '#fbcfe8', badgeInk: '#9d174d' }, // pink
+    { rgb: '167,139,250', badgeBg: '#ddd6fe', badgeInk: '#5b21b6' }, // violet
+    { rgb: '251,146,60', badgeBg: '#fed7aa', badgeInk: '#9a3412' }   // orange
+  ];
+  function nextColorIdx() { return fragments.length % PALETTE.length; }
 
   function loadJSON(key, fallback) {
     try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (e) { return fallback; }
   }
   var fragments = loadJSON(STORE_KEY, []);
-  fragments.forEach(function (f) { if (!f.notePos) f.notePos = 'post'; });
+  fragments.forEach(function (f, i) {
+    if (!f.notePos) f.notePos = 'post';
+    if (typeof f.colorIdx !== 'number') f.colorIdx = i % PALETTE.length;
+  });
   function persist() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(fragments)); } catch (e) {}
   }
@@ -43,7 +58,7 @@
     ':host{all:initial}' +
     '*{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}' +
     'button{border:0;cursor:pointer;background:none;padding:0}' +
-    '.hl{position:fixed;background:rgba(56,189,248,.32);border-radius:3px;pointer-events:none;z-index:4}' +
+    '.hl{position:fixed;border-radius:3px;pointer-events:none;z-index:4}' +
     '.bar{position:fixed;display:none;align-items:center;gap:2px;background:#111827;color:#f9fafb;' +
       'padding:5px 8px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.35);z-index:10;user-select:none}' +
     '.bar.show{display:flex}' +
@@ -51,7 +66,8 @@
     '.bar button:active{background:#374151}' +
     '.bar .x{color:#9ca3af}' +
     '.notebox{position:fixed;display:none;flex-direction:column;gap:8px;background:#111827;color:#f9fafb;' +
-      'padding:10px 12px;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.4);z-index:11;width:min(320px,92vw)}' +
+      'padding:10px 12px;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.4);z-index:26;' +
+      'width:min(480px,calc(100vw - 16px))}' +
     '.notebox.show{display:flex}' +
     '.notebox input{border:1px solid #374151;border-radius:8px;background:#1f2937;color:#f9fafb;' +
       'padding:9px 10px;font-size:15px;outline:none}' +
@@ -66,13 +82,11 @@
     '.chip.show{display:flex}' +
     '.pill{position:fixed;right:12px;bottom:110px;display:none;align-items:center;gap:8px;' +
       'background:#111827;color:#f9fafb;padding:12px 18px;border-radius:999px;font-size:15px;font-weight:600;' +
-      'box-shadow:0 6px 20px rgba(0,0,0,.4);z-index:5;touch-action:manipulation}' +
+      'box-shadow:0 6px 20px rgba(0,0,0,.4);z-index:25;touch-action:manipulation}' +
     '.pill.show{display:flex}' +
     '.pill .n{background:#38bdf8;color:#0c1220;border-radius:999px;min-width:24px;height:24px;display:flex;' +
       'align-items:center;justify-content:center;font-size:13px;padding:0 6px}' +
-    '.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:20}' +
-    '.backdrop.show{display:block}' +
-    '.sheet{position:fixed;left:0;right:0;bottom:0;max-height:80vh;display:none;flex-direction:column;' +
+    '.sheet{position:fixed;left:0;right:0;bottom:0;max-height:70vh;display:none;flex-direction:column;' +
       'background:#f8fafc;color:#0f172a;border-radius:18px 18px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.35);z-index:21}' +
     '.sheet.show{display:flex}' +
     '.sheet header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px}' +
@@ -81,7 +95,7 @@
     '.list{overflow-y:auto;padding:0 14px;flex:1;-webkit-overflow-scrolling:touch}' +
     '.frag{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;margin-bottom:10px}' +
     '.frag .top{display:flex;gap:10px;align-items:flex-start}' +
-    '.frag .idx{flex:none;background:#e0f2fe;color:#0369a1;border-radius:999px;min-width:22px;height:22px;' +
+    '.frag .idx{flex:none;border-radius:999px;min-width:22px;height:22px;' +
       'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;margin-top:1px}' +
     '.frag .txt{flex:1;font-size:14px;line-height:1.45;color:#1e293b;display:-webkit-box;-webkit-line-clamp:3;' +
       '-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}' +
@@ -113,7 +127,6 @@
       '.frag{background:#1e293b;border-color:#334155}' +
       '.frag .txt{color:#e2e8f0}' +
       '.frag input{background:#0f172a;border-color:#475569;color:#e2e8f0}' +
-      '.frag .idx{background:#075985;color:#e0f2fe}' +
       '.frag .pos{background:#334155;color:#cbd5e1}' +
       '.btn.minor{background:#334155;color:#cbd5e1}' +
       '.empty{color:#94a3b8}' +
@@ -124,7 +137,6 @@
     '<div class="bar" id="bar">' +
       '<button id="addBtn">&#xFF0B; Add</button>' +
       '<button id="noteBtn">&#x270E; Note</button>' +
-      '<button id="paraBtn">&#xB6;</button>' +
       '<button class="x" id="cancelBtn">&#x2715;</button>' +
     '</div>' +
     '<div class="notebox" id="notebox">' +
@@ -136,8 +148,7 @@
       '</div>' +
     '</div>' +
     '<button class="chip" id="chip">&#xFF0B; Collect</button>' +
-    '<button class="pill" id="pill"><span>Deep dive</span><span class="n" id="count">0</span></button>' +
-    '<div class="backdrop" id="backdrop"></div>' +
+    '<button class="pill" id="pill"><span id="pillLabel">Deep dive</span><span class="n" id="count">0</span></button>' +
     '<div class="sheet" id="sheet">' +
       '<header><h2>Collected fragments</h2><button class="close" id="closeBtn">&#x2715;</button></header>' +
       '<div class="list" id="list"></div>' +
@@ -162,7 +173,7 @@
   setInterval(attach, 2000);
 
   var $ = function (id) { return root.getElementById(id); };
-  var chip = $('chip'), pill = $('pill'), sheet = $('sheet'), backdrop = $('backdrop');
+  var chip = $('chip'), pill = $('pill'), sheet = $('sheet');
   var toastEl = $('toast'), listEl = $('list'), manualEl = $('manual');
   var hlLayer = $('hlLayer'), bar = $('bar'), notebox = $('notebox');
 
@@ -176,35 +187,75 @@
 
   function updatePill() {
     $('count').textContent = String(fragments.length);
-    pill.classList.toggle('show', fragments.length > 0);
+    pill.classList.toggle('show', fragments.length > 0 || sheetOpen);
+    positionPill();
+  }
+
+  // Lift bottom-anchored UI above the on-screen keyboard, and dock popovers to
+  // the visible part of the viewport (the keyboard shrinks visualViewport, not
+  // the layout viewport, so fixed elements otherwise slide under it).
+  function viewportInsets() {
+    var vv = window.visualViewport;
+    if (!vv) return { top: 0, left: 0, bottom: 0, height: window.innerHeight };
+    return {
+      top: vv.offsetTop,
+      left: vv.offsetLeft,
+      bottom: Math.max(0, window.innerHeight - vv.height - vv.offsetTop),
+      height: vv.height
+    };
+  }
+  function syncViewport() {
+    var ins = viewportInsets();
+    sheet.style.bottom = ins.bottom + 'px';
+    sheet.style.maxHeight = Math.round(ins.height * 0.7) + 'px';
+    if (notebox.classList.contains('show')) placeNotebox();
+    positionPill();
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncViewport);
+    window.visualViewport.addEventListener('scroll', syncViewport);
+  }
+
+  function positionPill() {
+    var ins = viewportInsets();
+    if (sheetOpen && sheet.classList.contains('show')) {
+      pill.style.bottom = (ins.bottom + sheet.offsetHeight + 12) + 'px';
+    } else {
+      pill.style.bottom = (ins.bottom + 110) + 'px';
+    }
   }
 
   function addFragment(text, note, notePos) {
+    var colorIdx = nextColorIdx();
     fragments.push({
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
       text: text,
       note: note || '',
       notePos: notePos || 'post',
+      colorIdx: colorIdx,
       ts: Date.now()
     });
     persist();
     updatePill();
+    if (sheetOpen) renderList();
     toast('Collected — ' + fragments.length + ' fragment' + (fragments.length > 1 ? 's' : ''));
+    return colorIdx;
   }
 
   // -------------------------------------------------- tap-to-collect engine
-  // Tap a sentence to highlight it; tap inside the highlight to extend by the
-  // next sentence; ¶ grabs the whole block. Long-press text selection still
-  // works via the Collect chip further down.
-  var pending = null; // {block, flat:{nodes,text}, sentences:[{start,end}], i0, i1}
+  // Tap a word to select it. Tap inside the highlight to widen the scope:
+  // word → sentence → paragraph → back to the word. Tap a word outside the
+  // highlight (same block) to grow the selection in that direction, word by
+  // word. Collected fragments keep a tinted mark on the page for the session.
+  var pending = null; // {block, flat, words, sentences, start, end, scope, aw0, aw1}
+  var marks = [];     // session-only: {flat, block, start, end, colorIdx}
 
   function segmentSentences(text) {
     var out = [];
     if (window.Intl && Intl.Segmenter) {
       try {
         var seg = new Intl.Segmenter(undefined, { granularity: 'sentence' });
-        var it = seg.segment(text);
-        var iter = it[Symbol.iterator]();
+        var iter = seg.segment(text)[Symbol.iterator]();
         var step;
         while (!(step = iter.next()).done) {
           out.push({ start: step.value.index, end: step.value.index + step.value.segment.length });
@@ -215,6 +266,49 @@
     var re = /[^.!?…]+[.!?…]*\s*/g, m;
     while ((m = re.exec(text))) out.push({ start: m.index, end: m.index + m[0].length });
     return out.length ? out : [{ start: 0, end: text.length }];
+  }
+
+  function segmentWords(text) {
+    var out = [];
+    if (window.Intl && Intl.Segmenter) {
+      try {
+        var seg = new Intl.Segmenter(undefined, { granularity: 'word' });
+        var iter = seg.segment(text)[Symbol.iterator]();
+        var step;
+        while (!(step = iter.next()).done) {
+          if (step.value.isWordLike) {
+            out.push({ start: step.value.index, end: step.value.index + step.value.segment.length });
+          }
+        }
+        if (out.length) return out;
+      } catch (e) {}
+    }
+    var re = /\S+/g, m;
+    while ((m = re.exec(text))) out.push({ start: m.index, end: m.index + m[0].length });
+    return out;
+  }
+
+  function wordAt(words, off) {
+    var best = null, bestDist = Infinity;
+    for (var i = 0; i < words.length; i++) {
+      var w = words[i];
+      if (off >= w.start && off < w.end) return w;
+      var d = off < w.start ? w.start - off : off - w.end + 1;
+      if (d < bestDist) { bestDist = d; best = w; }
+    }
+    return bestDist <= 3 ? best : null;
+  }
+
+  function sentenceBounds(sentences, start, end) {
+    var s0 = null, s1 = null;
+    var last = Math.max(start, end - 1);
+    for (var i = 0; i < sentences.length; i++) {
+      if (s0 === null && start < sentences[i].end) s0 = sentences[i];
+      if (last < sentences[i].end) { s1 = sentences[i]; break; }
+    }
+    if (!s0) s0 = sentences[0];
+    if (!s1) s1 = sentences[sentences.length - 1];
+    return { start: s0.start, end: s1.end };
   }
 
   function flatten(block) {
@@ -259,38 +353,33 @@
     return null;
   }
 
-  function pendingRange() {
-    var a = domPoint(pending.flat, pending.sentences[pending.i0].start);
-    var b = domPoint(pending.flat, pending.sentences[pending.i1].end);
+  function rectsFor(flat, start, end) {
+    var a = domPoint(flat, start);
+    var b = domPoint(flat, end);
     if (!a || !b) return null;
-    var r = document.createRange();
-    r.setStart(a.node, a.offset);
-    r.setEnd(b.node, b.offset);
-    return r;
+    try {
+      var r = document.createRange();
+      r.setStart(a.node, a.offset);
+      r.setEnd(b.node, b.offset);
+      var rects = r.getClientRects();
+      return rects.length ? rects : null;
+    } catch (e) {
+      return null;
+    }
   }
 
   function pendingText() {
-    return pending.flat.text
-      .slice(pending.sentences[pending.i0].start, pending.sentences[pending.i1].end)
-      .trim();
+    return pending.flat.text.slice(pending.start, pending.end).trim();
   }
 
   function clearPending() {
     pending = null;
-    hlLayer.textContent = '';
     bar.classList.remove('show');
     notebox.classList.remove('show');
+    redraw();
   }
 
-  function drawPending() {
-    hlLayer.textContent = '';
-    if (!pending) return;
-    var r = null;
-    try { r = pendingRange(); } catch (e) {}
-    if (!r) { clearPending(); return; }
-    var rects = r.getClientRects();
-    if (!rects.length) { clearPending(); return; }
-    var last = null;
+  function paintRects(rects, color) {
     for (var i = 0; i < rects.length; i++) {
       var rc = rects[i];
       if (rc.width < 1 || rc.height < 1) continue;
@@ -300,28 +389,40 @@
       d.style.top = rc.top + 'px';
       d.style.width = rc.width + 'px';
       d.style.height = rc.height + 'px';
+      d.style.background = color;
       hlLayer.appendChild(d);
-      last = rc;
     }
-    if (!last) { clearPending(); return; }
+  }
+
+  function redraw() {
+    hlLayer.textContent = '';
+    // Session marks for already-collected fragments (drop dead ones quietly).
+    marks = marks.filter(function (m) {
+      if (!m.block.isConnected) return false;
+      var rects = rectsFor(m.flat, m.start, m.end);
+      if (!rects) return false;
+      paintRects(rects, 'rgba(' + PALETTE[m.colorIdx].rgb + ',.18)');
+      return true;
+    });
+    if (!pending) { bar.classList.remove('show'); return; }
+    var rects = rectsFor(pending.flat, pending.start, pending.end);
+    if (!rects) { pending = null; bar.classList.remove('show'); return; }
+    paintRects(rects, 'rgba(' + PALETTE[nextColorIdx()].rgb + ',.34)');
+    var last = rects[rects.length - 1];
     bar.classList.add('show');
     var vw = window.innerWidth, vh = window.innerHeight;
-    var bw = bar.offsetWidth || 210, bh = bar.offsetHeight || 40;
+    var bw = bar.offsetWidth || 180, bh = bar.offsetHeight || 40;
     var left = Math.max(8, Math.min(last.left, vw - bw - 8));
     var top = last.bottom + 10;
     if (top + bh > vh - 8) top = rects[0].top - bh - 10;
     bar.style.left = left + 'px';
     bar.style.top = Math.max(8, top) + 'px';
-    if (notebox.classList.contains('show')) placeNotebox();
   }
 
   function placeNotebox() {
-    var vw = window.innerWidth;
-    var nw = notebox.offsetWidth || 300;
-    var barTop = parseFloat(bar.style.top) || 100;
-    var barLeft = parseFloat(bar.style.left) || 8;
-    notebox.style.left = Math.max(8, Math.min(barLeft, vw - nw - 8)) + 'px';
-    notebox.style.top = Math.max(8, barTop) + 'px';
+    var ins = viewportInsets();
+    notebox.style.top = (ins.top + 10) + 'px';
+    notebox.style.left = (ins.left + 8) + 'px';
   }
 
   function findBlock(el) {
@@ -335,11 +436,48 @@
     return null;
   }
 
+  function beginPending(block, flat, foff) {
+    var words = segmentWords(flat.text);
+    var w = wordAt(words, foff);
+    if (!w) return false;
+    pending = {
+      block: block,
+      flat: flat,
+      words: words,
+      sentences: segmentSentences(flat.text),
+      start: w.start,
+      end: w.end,
+      scope: 'word',
+      aw0: w.start,
+      aw1: w.end
+    };
+    return true;
+  }
+
+  function cycleScope() {
+    var p = pending;
+    if (p.scope === 'paragraph') {
+      p.start = p.aw0; p.end = p.aw1; p.scope = 'word';
+      return;
+    }
+    if (p.scope === 'sentence') {
+      p.start = 0; p.end = p.flat.text.length; p.scope = 'paragraph';
+      return;
+    }
+    // word or custom → the sentence(s) covering the current selection;
+    // if that changes nothing, go straight to the paragraph.
+    var sb = sentenceBounds(p.sentences, p.start, p.end);
+    if (sb.start === p.start && sb.end === p.end) {
+      p.start = 0; p.end = p.flat.text.length; p.scope = 'paragraph';
+    } else {
+      p.start = sb.start; p.end = sb.end; p.scope = 'sentence';
+    }
+  }
+
   document.addEventListener('click', function (e) {
     if (e.target === host) return;
     var el = e.target && e.target.nodeType === 1 ? e.target : (e.target ? e.target.parentElement : null);
     if (!el || host.contains(el)) return;
-    if (sheetOpen) return;
     if (el.closest && el.closest('a,button,input,textarea,select,[contenteditable],[role="button"],svg')) {
       clearPending();
       return;
@@ -353,44 +491,41 @@
 
     if (pending && pending.block === block) {
       var off = flatOffset(pending.flat, cp.node, cp.offset);
-      if (off >= pending.sentences[pending.i0].start && off <= pending.sentences[pending.i1].end) {
-        // Tap inside the highlight: extend by the next sentence.
-        if (pending.i1 < pending.sentences.length - 1) {
-          pending.i1++;
-          drawPending();
-        } else {
-          toast('End of paragraph');
+      if (off >= 0) {
+        if (off >= pending.start && off <= pending.end) {
+          cycleScope();
+          redraw();
+          return;
         }
-        return;
+        // Outside the highlight, same block: grow toward the tapped word.
+        var w = wordAt(pending.words, off);
+        if (w) {
+          if (off >= pending.end) pending.end = Math.max(pending.end, w.end);
+          else pending.start = Math.min(pending.start, w.start);
+          pending.scope = 'custom';
+          redraw();
+          return;
+        }
       }
     }
     var flat = flatten(block);
     var foff = flatOffset(flat, cp.node, cp.offset);
     if (foff < 0) { clearPending(); return; }
-    var sentences = segmentSentences(flat.text);
-    var idx = -1;
-    for (var i = 0; i < sentences.length; i++) {
-      if (foff >= sentences[i].start && foff < sentences[i].end) { idx = i; break; }
-    }
-    if (idx < 0) idx = sentences.length - 1;
-    var probe = flat.text.slice(sentences[idx].start, sentences[idx].end).trim();
-    if (probe.length < MIN_LEN) { clearPending(); return; }
     hideChip();
     notebox.classList.remove('show');
-    pending = { block: block, flat: flat, sentences: sentences, i0: idx, i1: idx };
-    drawPending();
+    if (!beginPending(block, flat, foff)) { clearPending(); return; }
+    redraw();
   });
 
-  $('addBtn').addEventListener('click', function () {
-    if (!pending) return;
-    addFragment(pendingText());
+  function collectPending(note, notePos) {
+    var p = pending;
+    var colorIdx = addFragment(pendingText(), note, notePos);
+    marks.push({ flat: p.flat, block: p.block, start: p.start, end: p.end, colorIdx: colorIdx });
     clearPending();
-  });
-  $('paraBtn').addEventListener('click', function () {
-    if (!pending) return;
-    pending.i0 = 0;
-    pending.i1 = pending.sentences.length - 1;
-    drawPending();
+  }
+
+  $('addBtn').addEventListener('click', function () {
+    if (pending) collectPending();
   });
   $('cancelBtn').addEventListener('click', clearPending);
 
@@ -412,8 +547,7 @@
   });
   function noteboxAdd() {
     if (!pending) { notebox.classList.remove('show'); return; }
-    addFragment(pendingText(), $('noteInput').value.trim(), notePos);
-    clearPending();
+    collectPending($('noteInput').value.trim(), notePos);
   }
   $('noteAdd').addEventListener('click', noteboxAdd);
   $('noteInput').addEventListener('keydown', function (e) {
@@ -422,11 +556,11 @@
 
   var redrawScheduled = false;
   function scheduleRedraw() {
-    if (!pending || redrawScheduled) return;
+    if ((!pending && !marks.length) || redrawScheduled) return;
     redrawScheduled = true;
     requestAnimationFrame(function () {
       redrawScheduled = false;
-      drawPending();
+      redraw();
     });
   }
   window.addEventListener('scroll', scheduleRedraw, true);
@@ -458,11 +592,10 @@
   });
 
   function onSelection() {
-    if (sheetOpen) return;
     var sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) { hideChip(); return; }
     var text = sel.toString().trim();
-    if (text.length < MIN_LEN) { hideChip(); return; }
+    if (text.length < MIN_SEL_LEN) { hideChip(); return; }
     var node = sel.anchorNode;
     var el = node ? (node.nodeType === 1 ? node : node.parentElement) : null;
     if (!el || host.contains(el)) return;
@@ -487,33 +620,35 @@
     try { window.getSelection().removeAllRanges(); } catch (err) {}
   });
 
-  // ----------------------------------------------------------------- sheet
+  // ------------------------------------------------------------------ sheet
+  // Non-modal: the conversation stays visible and scrollable behind it, taps
+  // still collect while it's open, and the pill rides above it as a toggle.
   function openSheet() {
     sheetOpen = true;
     hideChip();
     clearPending();
     renderList();
     manualEl.classList.remove('show');
-    backdrop.classList.add('show');
     sheet.classList.add('show');
+    syncViewport();
+    updatePill();
   }
   function closeSheet() {
     sheetOpen = false;
-    backdrop.classList.remove('show');
     sheet.classList.remove('show');
+    updatePill();
   }
   function toggleSheet() { sheetOpen ? closeSheet() : openSheet(); }
 
-  pill.addEventListener('click', openSheet);
+  pill.addEventListener('click', toggleSheet);
   $('closeBtn').addEventListener('click', closeSheet);
-  backdrop.addEventListener('click', closeSheet);
 
   function renderList() {
     listEl.textContent = '';
     if (!fragments.length) {
       var empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = 'Nothing collected yet. Tap a sentence in a reply (tap again to extend it), or long-press to select any span.';
+      empty.textContent = 'Nothing collected yet. Tap a word in a reply — tap the highlight to widen it (word → sentence → paragraph), tap nearby words to grow it — or long-press to select any span.';
       var backup = loadJSON(BACKUP_KEY, null);
       if (backup && backup.length) {
         empty.appendChild(document.createElement('br'));
@@ -522,7 +657,10 @@
         restore.textContent = 'Restore last batch (' + backup.length + ')';
         restore.addEventListener('click', function () {
           fragments = backup;
-          fragments.forEach(function (f) { if (!f.notePos) f.notePos = 'post'; });
+          fragments.forEach(function (f, i) {
+            if (!f.notePos) f.notePos = 'post';
+            if (typeof f.colorIdx !== 'number') f.colorIdx = i % PALETTE.length;
+          });
           persist(); updatePill(); renderList();
         });
         empty.appendChild(restore);
@@ -531,6 +669,7 @@
       $('goBtn').disabled = true;
       $('mdBtn').disabled = true;
       $('txtBtn').disabled = true;
+      positionPill();
       return;
     }
     $('goBtn').disabled = false;
@@ -546,6 +685,8 @@
       var idx = document.createElement('span');
       idx.className = 'idx';
       idx.textContent = String(i + 1);
+      idx.style.background = PALETTE[f.colorIdx].badgeBg;
+      idx.style.color = PALETTE[f.colorIdx].badgeInk;
 
       var txt = document.createElement('div');
       txt.className = 'txt';
@@ -586,13 +727,15 @@
       item.appendChild(row);
       listEl.appendChild(item);
     });
+    positionPill();
   }
 
   $('clearBtn').addEventListener('click', function () {
     if (!fragments.length) { closeSheet(); return; }
     try { localStorage.setItem(BACKUP_KEY, JSON.stringify(fragments)); } catch (e) {}
     fragments = [];
-    persist(); updatePill(); renderList();
+    marks = [];
+    persist(); updatePill(); renderList(); redraw();
     toast('Cleared (restorable from the sheet)');
   });
 
@@ -740,7 +883,8 @@
   function finishBatch(msg) {
     try { localStorage.setItem(BACKUP_KEY, JSON.stringify(fragments)); } catch (e) {}
     fragments = [];
-    persist(); updatePill(); closeSheet();
+    marks = [];
+    persist(); updatePill(); closeSheet(); redraw();
     toast(msg, 2600);
   }
 
@@ -765,5 +909,16 @@
   });
 
   updatePill();
-  window.__deepdive = { toggle: toggleSheet, version: VERSION };
+  syncViewport();
+  window.__deepdive = {
+    toggle: toggleSheet,
+    version: VERSION,
+    _debug: function () {
+      return {
+        pending: pending ? { start: pending.start, end: pending.end, scope: pending.scope, text: pendingText() } : null,
+        fragments: fragments.map(function (f) { return { text: f.text, note: f.note, notePos: f.notePos, colorIdx: f.colorIdx }; }),
+        marks: marks.length
+      };
+    }
+  };
 })();
