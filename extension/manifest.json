@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "DeepDive",
+  "version": "0.2.0",
+  "description": "Tap sentences in ChatGPT/Claude, collect and annotate fragments, compose one deep-dive payload. Everything stays local.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*"
+      ],
+      "js": ["deepdive.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "deepdive@projectnothing.ai",
+      "strict_min_version": "121.0"
+    }
+  }
+}

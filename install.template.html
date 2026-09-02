@@ -154,14 +154,14 @@
 <div class="wrap">
   <p class="eyebrow">Select &rarr; collect &rarr; synthesize</p>
   <h1>DeepDive</h1>
-  <p class="lede">Editorial selection over your AI conversations. Mark the passages that catch your attention while reading, annotate them, and send them back as one deep-dive prompt &mdash; no copy-paste, no talking, no API.</p>
+  <p class="lede">Editorial selection over your AI conversations. Tap the sentences that catch your attention while reading, annotate them, and send them back as one payload &mdash; no boilerplate, no copy-paste, no API.</p>
 
   <div class="demo" aria-hidden="true">
     <p class="demo-text">The garbage collector becomes the allocator of life. Creators rarely bear the cost of rejection. <mark>The missing primitive is not annotation; it&rsquo;s accumulating several annotations before responding.</mark> Selection is probably the higher-bandwidth input modality.</p>
-    <span class="demo-chip">&#xFF0B; Collect</span>
+    <span class="demo-chip">&#xFF0B; Add &nbsp;&#x270E; Note &nbsp;&#xB6; &nbsp;&#x2715;</span>
     <span class="demo-pill">Deep dive <span class="n">3</span></span>
   </div>
-  <p class="flow">Works on <b>chatgpt.com</b> and <b>claude.ai</b> in a mobile browser. Fragments persist across responses and conversations, stored only on your phone. Your existing subscription does all the inference.</p>
+  <p class="flow">Works on <b>chatgpt.com</b> and <b>claude.ai</b> in a mobile browser. Fragments persist across responses and conversations, stored only on your phone, and export to <b>.md</b>/<b>.txt</b> at any time. Your existing subscription does all the inference. Three ways to run it &mdash; all the same payload.</p>
 
   <section>
     <h2>Firefox + Tampermonkey <span class="tag rec">Recommended</span></h2>
@@ -175,7 +175,7 @@
         <p class="btn-note" id="scriptMeta"></p>
       </li>
       <li>Menu <code>&#8942;</code> &rarr; Add-ons &rarr; <b>Tampermonkey</b> &rarr; open its <b>Dashboard</b> &rarr; tap <b>+</b> (create new script) &rarr; long-press in the editor, <b>Select all</b>, <b>Paste</b> &rarr; save (file icon or Ctrl-S).</li>
-      <li>Open <a href="https://chatgpt.com">chatgpt.com</a> in Firefox and sign in. Select any sentence in a reply &mdash; the <b>&#xFF0B; Collect</b> chip appears.</li>
+      <li>Open <a href="https://chatgpt.com">chatgpt.com</a> in Firefox and sign in. Tap any sentence in a reply &mdash; it highlights and the <b>&#xFF0B; Add</b> bar appears.</li>
     </ol>
     <details>
       <summary>Copy button not working? View the source</summary>
@@ -193,16 +193,28 @@
       </li>
       <li>In Chrome, bookmark any page (<code>&#8942;</code> &rarr; &#9734;), then <code>&#8942;</code> &rarr; <b>Bookmarks</b> &rarr; edit it: name it <code>dive</code> and paste over the URL.
         <small>If Chrome strips the <code>javascript:</code> prefix when pasting, retype those 11 characters at the front.</small></li>
-      <li>On chatgpt.com, type <code>dive</code> in the address bar and tap the bookmark suggestion. The pill and chip appear; tapping it again opens your collected fragments.</li>
+      <li>On chatgpt.com, type <code>dive</code> in the address bar and tap the bookmark suggestion to activate tap-to-collect; running it again opens your collected fragments.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Extension package <span class="tag alt">For distribution</span></h2>
+    <p class="sub">The same payload as a WebExtension &mdash; for sharing with others without a userscript manager, and for store submission later.</p>
+    <ol class="steps">
+      <li><code>extension/</code> in the repo holds <code>manifest.json</code> + the content script; <code>deepdive-extension.zip</code> is the packaged build.</li>
+      <li>Desktop Chrome/Edge: <code>chrome://extensions</code> &rarr; Developer mode &rarr; <b>Load unpacked</b> &rarr; pick the <code>extension/</code> folder.
+        <small>Chrome on Android doesn&rsquo;t run extensions &mdash; that&rsquo;s why mobile routes through Firefox or the bookmarklet.</small></li>
+      <li>To hand it to others with one tap: submit the zip to Firefox Add-ons (free signing; installs normally on Firefox Android) or the Chrome/Edge stores for desktop.</li>
     </ol>
   </section>
 
   <section>
     <h2>Using it</h2>
     <div class="usage">
-      <p><span class="k">Select</span> a passage in any reply &rarr; tap <span class="k">&#xFF0B; Collect</span>. Repeat as you read &mdash; across replies, even across conversations.</p>
-      <p>Tap the <span class="k">Deep dive</span> pill to review: add a short note to any fragment, delete strays, expand truncated text with a tap.</p>
-      <p><span class="k">&#x2197; Explore together</span> writes the synthesized prompt straight into the composer. Review it, then send. If injection is ever blocked, it lands on your clipboard instead.</p>
+      <p><span class="k">Tap a sentence</span> in any reply &mdash; it highlights, with a small bar: <span class="k">&#xFF0B; Add</span> collects it, <span class="k">&#x270E; Note</span> annotates it now (choose whether the note sits <i>before</i> or <i>after</i> the quote), <span class="k">&#xB6;</span> grabs the whole paragraph. <span class="k">Tap the highlight again</span> to extend it one sentence at a time. Long-press selection still works for arbitrary spans.</p>
+      <p>Tap the <span class="k">Deep dive</span> pill to review: annotate later, flip a note between before/after, delete strays, expand truncated text with a tap. Fragments accumulate across replies and conversations.</p>
+      <p><span class="k">&#x2197; To composer</span> writes just your fragments and annotations into the composer &mdash; no added prompt text; your annotations carry the intent. Review, then send. If injection is ever blocked, it lands on your clipboard instead.</p>
+      <p><span class="k">&#x2B07; .md</span> / <span class="k">&#x2B07; .txt</span> download the current batch to your phone without sending or clearing anything.</p>
       <p><span class="k">Clear</span> and sent batches are restorable from the empty sheet, so nothing is lost by accident.</p>
     </div>
   </section>
