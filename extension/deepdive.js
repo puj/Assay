@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.3.0';
+  var VERSION = '0.3.1';
   var STORE_KEY = 'deepdive.fragments.v1';
   var BACKUP_KEY = 'deepdive.lastBatch.v1';
   var MIN_SEL_LEN = 4;
@@ -39,6 +39,11 @@
   var host = document.createElement('div');
   host.id = 'deepdive-host';
   host.style.cssText = 'all:initial;position:fixed;top:0;left:0;width:0;height:0;z-index:2147483646;';
+  // Key events from inside the shadow root reach the page retargeted to this
+  // bare host div, so ChatGPT's "type anywhere to focus the composer" handler
+  // doesn't see an editable target and steals focus mid-note. Marking the host
+  // contenteditable makes those handlers treat our typing as already-editable.
+  host.setAttribute('contenteditable', 'true');
   var root = host.attachShadow({ mode: 'open' });
   root.innerHTML =
     '<style>' +
@@ -153,7 +158,12 @@
 
   function attach() {
     var parent = document.body || document.documentElement;
-    if (parent && !host.isConnected) parent.appendChild(host);
+    if (parent && !host.isConnected) {
+      var ae = root.activeElement;
+      parent.appendChild(host);
+      // Re-appending the host drops focus inside the shadow root; restore it.
+      if (ae && ae.focus) { try { ae.focus(); } catch (e) {} }
+    }
   }
   attach();
   // SPA route changes occasionally rebuild <body>; make sure our UI survives.
@@ -163,6 +173,30 @@
   var chip = $('chip'), pill = $('pill'), sheet = $('sheet');
   var toastEl = $('toast'), listEl = $('list'), manualEl = $('manual');
   var hlLayer = $('hlLayer'), bar = $('bar'), notebox = $('notebox');
+
+  // Focus guard for our text fields: keep key events away from the page's
+  // global hotkey handlers, and take focus back when the page steals it
+  // without a user tap (a tap is the user's own decision to leave).
+  var lastPointerTs = 0;
+  document.addEventListener('pointerdown', function () { lastPointerTs = Date.now(); }, true);
+  var refocusLog = [];
+  function guardInput(el) {
+    ['keydown', 'keyup', 'keypress'].forEach(function (t) {
+      el.addEventListener(t, function (e) { e.stopPropagation(); });
+    });
+    el.addEventListener('blur', function () {
+      if (Date.now() - lastPointerTs < 500) return;
+      var now = Date.now();
+      refocusLog = refocusLog.filter(function (t) { return now - t < 1500; });
+      if (refocusLog.length >= 4) return; // don't fight a persistent page forever
+      refocusLog.push(now);
+      setTimeout(function () {
+        if (el.isConnected && el.offsetParent !== null && Date.now() - lastPointerTs > 400) {
+          try { el.focus(); } catch (e) {}
+        }
+      }, 0);
+    });
+  }
 
   var toastTimer = null;
   function toast(msg, ms) {
@@ -224,7 +258,19 @@
     });
     persist();
     updatePill();
-    if (sheetOpen) renderList();
+    if (sheetOpen) {
+      // Append rather than rebuild: a full re-render would drop focus from a
+      // note input the user is typing in.
+      if (listEl.querySelector('.frag')) {
+        listEl.appendChild(buildFragItem(fragments[fragments.length - 1], fragments.length - 1));
+        $('goBtn').disabled = false;
+        $('mdBtn').disabled = false;
+        $('txtBtn').disabled = false;
+        positionPill();
+      } else {
+        renderList();
+      }
+    }
     toast('Collected — ' + fragments.length + ' fragment' + (fragments.length > 1 ? 's' : ''));
     return colorIdx;
   }
@@ -540,6 +586,8 @@
   $('noteInput').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') noteboxAdd();
   });
+  guardInput($('noteInput'));
+  guardInput($('manualTxt'));
 
   var redrawScheduled = false;
   function scheduleRedraw() {
@@ -663,58 +711,63 @@
     $('mdBtn').disabled = false;
     $('txtBtn').disabled = false;
     fragments.forEach(function (f, i) {
-      var item = document.createElement('div');
-      item.className = 'frag';
-
-      var top = document.createElement('div');
-      top.className = 'top';
-
-      var idx = document.createElement('span');
-      idx.className = 'idx';
-      idx.textContent = String(i + 1);
-      idx.style.background = PALETTE[f.colorIdx].badgeBg;
-      idx.style.color = PALETTE[f.colorIdx].badgeInk;
-
-      var txt = document.createElement('div');
-      txt.className = 'txt';
-      txt.textContent = f.text;
-      txt.addEventListener('click', function () { txt.classList.toggle('full'); });
-
-      var del = document.createElement('button');
-      del.className = 'del';
-      del.textContent = '✕';
-      del.addEventListener('click', function () {
-        fragments = fragments.filter(function (x) { return x.id !== f.id; });
-        persist(); updatePill(); renderList();
-      });
-
-      top.appendChild(idx); top.appendChild(txt); top.appendChild(del);
-
-      var row = document.createElement('div');
-      row.className = 'noterow';
-
-      var note = document.createElement('input');
-      note.type = 'text';
-      note.placeholder = 'annotation (now or later)';
-      note.value = f.note || '';
-      note.addEventListener('input', function () { f.note = note.value; persist(); });
-
-      var pos = document.createElement('button');
-      pos.className = 'pos';
-      pos.textContent = f.notePos === 'pre' ? 'before' : 'after';
-      pos.title = 'Where the annotation sits relative to the quote';
-      pos.addEventListener('click', function () {
-        f.notePos = f.notePos === 'pre' ? 'post' : 'pre';
-        pos.textContent = f.notePos === 'pre' ? 'before' : 'after';
-        persist();
-      });
-
-      row.appendChild(note); row.appendChild(pos);
-      item.appendChild(top);
-      item.appendChild(row);
-      listEl.appendChild(item);
+      listEl.appendChild(buildFragItem(f, i));
     });
     positionPill();
+  }
+
+  function buildFragItem(f, i) {
+    var item = document.createElement('div');
+    item.className = 'frag';
+
+    var top = document.createElement('div');
+    top.className = 'top';
+
+    var idx = document.createElement('span');
+    idx.className = 'idx';
+    idx.textContent = String(i + 1);
+    idx.style.background = PALETTE[f.colorIdx].badgeBg;
+    idx.style.color = PALETTE[f.colorIdx].badgeInk;
+
+    var txt = document.createElement('div');
+    txt.className = 'txt';
+    txt.textContent = f.text;
+    txt.addEventListener('click', function () { txt.classList.toggle('full'); });
+
+    var del = document.createElement('button');
+    del.className = 'del';
+    del.textContent = '✕';
+    del.addEventListener('click', function () {
+      fragments = fragments.filter(function (x) { return x.id !== f.id; });
+      persist(); updatePill(); renderList();
+    });
+
+    top.appendChild(idx); top.appendChild(txt); top.appendChild(del);
+
+    var row = document.createElement('div');
+    row.className = 'noterow';
+
+    var note = document.createElement('input');
+    note.type = 'text';
+    note.placeholder = 'annotation (now or later)';
+    note.value = f.note || '';
+    note.addEventListener('input', function () { f.note = note.value; persist(); });
+    guardInput(note);
+
+    var pos = document.createElement('button');
+    pos.className = 'pos';
+    pos.textContent = f.notePos === 'pre' ? 'before' : 'after';
+    pos.title = 'Where the annotation sits relative to the quote';
+    pos.addEventListener('click', function () {
+      f.notePos = f.notePos === 'pre' ? 'post' : 'pre';
+      pos.textContent = f.notePos === 'pre' ? 'before' : 'after';
+      persist();
+    });
+
+    row.appendChild(note); row.appendChild(pos);
+    item.appendChild(top);
+    item.appendChild(row);
+    return item;
   }
 
   $('clearBtn').addEventListener('click', function () {
