@@ -13,9 +13,11 @@ fragment sheet is non-modal — the pill toggles it while the conversation
 stays scrollable, and taps keep collecting. **↗ To composer** writes just
 the fragments and annotations into the site's composer — no wrapper prompt,
 the annotations carry the intent — for you to review and send.
-**⭳ .md / ⭳ .txt** download the batch locally at any time. Note controls and
-the sheet track `visualViewport`, so the on-screen keyboard never covers
-them.
+**⭳ .md / ⭳ .txt** download the entire current conversation — roles, text,
+code blocks — with the collected fragments appended, all locally (verbatim
+export captures what's loaded on the page, so scroll up first on very long
+threads). Note controls and the sheet track `visualViewport`, so the
+on-screen keyboard never covers them.
 
 No API keys, no backend, no account. One core payload, three delivery
 formats. Fragments live in the browser's `localStorage`, scoped **per

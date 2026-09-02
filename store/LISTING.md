@@ -39,7 +39,8 @@ Chrome (132-char limit) / AMO summary:
 > - Each fragment gets its own highlight color and stays marked on the page
 > - The Deep dive tray shows your collection — reorder your thinking,
 >   annotate later, then send everything to the composer with one tap
-> - Export any batch as Markdown or plain text
+> - Export the entire conversation as Markdown or plain text, with your
+>   fragments and notes appended — a verbatim local record
 > - Every conversation keeps its own fragment list
 >
 > **Private by design**

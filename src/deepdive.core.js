@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.4.1';
+  var VERSION = '0.5.0';
   var MAP_KEY = 'deepdive.byConvo.v1';
   var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -324,8 +324,6 @@
       if (listEl.querySelector('.frag')) {
         listEl.appendChild(buildFragItem(fragments[fragments.length - 1], fragments.length - 1));
         $('goBtn').disabled = false;
-        $('mdBtn').disabled = false;
-        $('txtBtn').disabled = false;
         positionPill();
       } else {
         renderList();
@@ -758,14 +756,10 @@
       }
       listEl.appendChild(empty);
       $('goBtn').disabled = true;
-      $('mdBtn').disabled = true;
-      $('txtBtn').disabled = true;
       positionPill();
       return;
     }
     $('goBtn').disabled = false;
-    $('mdBtn').disabled = false;
-    $('txtBtn').disabled = false;
     fragments.forEach(function (f, i) {
       listEl.appendChild(buildFragItem(f, i));
     });
@@ -864,24 +858,108 @@
     return niceStamp().replace(' ', '-').replace(':', '');
   }
 
-  function buildMarkdown() {
-    var lines = ['# Fragments — ' + location.hostname + ' — ' + niceStamp(), ''];
+  // -------------------------------------------- whole-conversation capture
+  function textOf(el) {
+    return (el.innerText || '').replace(/ /g, ' ').trim();
+  }
+
+  // Light DOM→markdown for rendered chat messages: block structure only
+  // (paragraphs, headings, lists, code fences, quotes); inline styling is
+  // dropped. Robust beats faithful here.
+  function serializeBlocks(rootEl) {
+    var out = [];
+    function pushText(s) { if (s) out.push(s); }
+    function walk(node) {
+      if (node.nodeType !== 1 || node === host) return;
+      var tag = node.tagName;
+      var h = /^H([1-6])$/.exec(tag);
+      if (h) { pushText(new Array(+h[1] + 1).join('#') + ' ' + textOf(node)); return; }
+      if (tag === 'P') { pushText(textOf(node)); return; }
+      if (tag === 'PRE') {
+        var code = node.querySelector('code');
+        var t = ((code || node).innerText || '').replace(/\s+$/, '');
+        if (t) out.push('```\n' + t + '\n```');
+        return;
+      }
+      if (tag === 'UL' || tag === 'OL') {
+        var items = node.querySelectorAll(':scope > li');
+        Array.prototype.forEach.call(items, function (li, i) {
+          pushText((tag === 'OL' ? (i + 1) + '. ' : '- ') + textOf(li).replace(/\n+/g, ' '));
+        });
+        return;
+      }
+      if (tag === 'BLOCKQUOTE') {
+        var q = textOf(node);
+        if (q) out.push(q.split('\n').map(function (l) { return '> ' + l; }).join('\n'));
+        return;
+      }
+      if (tag === 'TABLE') { pushText(textOf(node)); return; }
+      var child = node.firstChild;
+      while (child) { walk(child); child = child.nextSibling; }
+    }
+    walk(rootEl);
+    if (!out.length) pushText(textOf(rootEl));
+    return out;
+  }
+
+  function getConversation() {
+    var nodes = document.querySelectorAll('[data-message-author-role]');
+    if (nodes.length) {
+      return Array.prototype.map.call(nodes, function (n) {
+        return { role: n.getAttribute('data-message-author-role') === 'user' ? 'You' : 'Assistant', el: n };
+      });
+    }
+    nodes = document.querySelectorAll('[data-testid="user-message"], .font-claude-message');
+    if (nodes.length) {
+      return Array.prototype.map.call(nodes, function (n) {
+        return { role: (' ' + n.className + ' ').indexOf(' font-claude-message ') !== -1 ? 'Assistant' : 'You', el: n };
+      });
+    }
+    return null;
+  }
+
+  function convoTitle() {
+    var t = (document.title || '').replace(/\s*[—|–-]\s*(ChatGPT|Claude).*$/i, '').trim();
+    return t || 'Conversation';
+  }
+
+  function fragmentAppendixMd(lines) {
+    lines.push('---', '', '## Collected fragments (' + fragments.length + ')', '');
     fragments.forEach(function (f, i) {
       var note = (f.note || '').trim();
-      lines.push('## ' + (i + 1));
-      lines.push('');
-      if (note && f.notePos === 'pre') {
-        lines.push('*' + note + ':*');
-        lines.push('');
-      }
+      lines.push('### ' + (i + 1), '');
+      if (note && f.notePos === 'pre') lines.push('*' + note + ':*', '');
       f.text.trim().split('\n').forEach(function (l) { lines.push('> ' + l); });
-      if (note && f.notePos !== 'pre') {
-        lines.push('');
-        lines.push('→ *' + note + '*');
-      }
+      if (note && f.notePos !== 'pre') lines.push('', '→ *' + note + '*');
       lines.push('');
     });
+  }
+
+  function buildConversationMarkdown(turns) {
+    if (!turns && !fragments.length) return null;
+    var lines = ['# ' + convoTitle(), '', '_' + location.hostname + ' — ' + niceStamp() + '_', ''];
+    if (turns) {
+      turns.forEach(function (t) {
+        lines.push('## ' + t.role, '');
+        serializeBlocks(t.el).forEach(function (b) { lines.push(b, ''); });
+      });
+    }
+    if (fragments.length) fragmentAppendixMd(lines);
     return lines.join('\n');
+  }
+
+  function buildConversationText(turns) {
+    if (!turns && !fragments.length) return null;
+    var parts = [convoTitle() + ' — ' + location.hostname + ' — ' + niceStamp()];
+    if (turns) {
+      turns.forEach(function (t) {
+        parts.push(t.role + ':\n' + serializeBlocks(t.el).join('\n\n'));
+      });
+    }
+    if (fragments.length) {
+      parts.push('--- Collected fragments ---\n\n' + buildPayload());
+    }
+    return parts.join('\n\n') + '\n';
   }
 
   function download(name, text, mime) {
@@ -901,16 +979,18 @@
     }
   }
 
-  $('mdBtn').addEventListener('click', function () {
-    if (!fragments.length) return;
-    var ok = download('deepdive-' + fileStamp() + '.md', buildMarkdown(), 'text/markdown');
-    toast(ok ? 'Saved .md' : 'Download blocked by the browser');
-  });
-  $('txtBtn').addEventListener('click', function () {
-    if (!fragments.length) return;
-    var ok = download('deepdive-' + fileStamp() + '.txt', buildPayload() + '\n', 'text/plain');
-    toast(ok ? 'Saved .txt' : 'Download blocked by the browser');
-  });
+  function exportConversation(ext, mime) {
+    var turns = getConversation();
+    var content = ext === 'md' ? buildConversationMarkdown(turns) : buildConversationText(turns);
+    if (!content) { toast('Nothing to export yet'); return; }
+    var ok = download('digboard-' + fileStamp() + '.' + ext, content, mime);
+    if (!ok) { toast('Download blocked by the browser'); return; }
+    toast(turns
+      ? 'Saved conversation' + (fragments.length ? ' + fragments' : '') + ' (.' + ext + ')'
+      : 'Transcript not found — saved fragments only (.' + ext + ')', 2400);
+  }
+  $('mdBtn').addEventListener('click', function () { exportConversation('md', 'text/markdown'); });
+  $('txtBtn').addEventListener('click', function () { exportConversation('txt', 'text/plain'); });
 
   // ------------------------------------------------------------- composing
   function findComposer() {
@@ -1013,7 +1093,9 @@
       return {
         pending: pending ? { start: pending.start, end: pending.end, scope: pending.scope, text: pendingText() } : null,
         fragments: fragments.map(function (f) { return { text: f.text, note: f.note, notePos: f.notePos, colorIdx: f.colorIdx }; }),
-        marks: marks.length
+        marks: marks.length,
+        exportMd: buildConversationMarkdown(getConversation()),
+        exportTxt: buildConversationText(getConversation())
       };
     }
   };
