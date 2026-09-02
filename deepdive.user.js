@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         DeepDive — collect fragments, synthesize together
+// @name         DigBoard — deep dive for AI chats
 // @namespace    https://github.com/puj/Diveboard
-// @version      0.4.0
-// @description  Tap sentences in ChatGPT or Claude on mobile, collect several, annotate each (before or after the quote), then send them back as one payload — no boilerplate, no API. Export .md/.txt built in.
+// @version      0.4.1
+// @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -17,7 +17,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.4.0';
+  var VERSION = '0.4.1';
   var MAP_KEY = 'deepdive.byConvo.v1';
   var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';

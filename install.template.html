@@ -1,4 +1,4 @@
-<title>DeepDive Setup</title>
+<title>DigBoard Setup</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..600&display=swap">
 <style>
   :root {
@@ -153,7 +153,7 @@
 
 <div class="wrap">
   <p class="eyebrow">Select &rarr; collect &rarr; synthesize</p>
-  <h1>DeepDive</h1>
+  <h1>DigBoard</h1>
   <p class="lede">Editorial selection over your AI conversations. Tap the sentences that catch your attention while reading, annotate them, and send them back as one payload &mdash; no boilerplate, no copy-paste, no API.</p>
 
   <div class="demo" aria-hidden="true">
@@ -199,11 +199,11 @@
 
   <section>
     <h2>Extension package <span class="tag alt">For distribution</span></h2>
-    <p class="sub">The same payload as a WebExtension &mdash; no userscript manager needed. <code>extension/</code> in the repo holds the source; <code>deepdive-extension.zip</code> is the packaged build.</p>
+    <p class="sub">The same payload as a WebExtension &mdash; no userscript manager needed. <code>extension/</code> in the repo holds the source; <code>digboard-extension.zip</code> is the packaged build, and <code>store/</code> has the listing copy, screenshots and submission checklist.</p>
     <ol class="steps">
       <li><b>Desktop Chrome/Edge, today, free:</b> <code>chrome://extensions</code> &rarr; Developer mode &rarr; <b>Load unpacked</b> &rarr; pick the <code>extension/</code> folder.
         <small>Chrome on Android doesn&rsquo;t run extensions at all &mdash; that&rsquo;s why mobile routes through Firefox or the bookmarklet.</small></li>
-      <li><b>Real Firefox Android extension:</b> create a free developer account at <a href="https://addons.mozilla.org/developers/">addons.mozilla.org</a> (no fee, unlike Chrome&rsquo;s one-time $5) and submit <code>deepdive-extension.zip</code> as a <b>listed</b> add-on. Automated review typically approves simple extensions within <b>minutes to hours</b>; a follow-up human review can occasionally take days. Once live, it installs on regular Firefox for Android with one tap from its add-on page &mdash; set the listing&rsquo;s visibility to <b>Invisible</b> so only people with the direct link find it.</li>
+      <li><b>Real Firefox Android extension:</b> create a free developer account at <a href="https://addons.mozilla.org/developers/">addons.mozilla.org</a> (no fee, unlike Chrome&rsquo;s one-time $5) and submit <code>digboard-extension.zip</code> as a <b>listed</b> add-on. Automated review typically approves simple extensions within <b>minutes to hours</b>; a follow-up human review can occasionally take days. Once live, it installs on regular Firefox for Android with one tap from its add-on page &mdash; set the listing&rsquo;s visibility to <b>Invisible</b> so only people with the direct link find it.</li>
       <li><b>Private alternative (no listing):</b> submit as <b>unlisted/self-distributed</b> instead &mdash; signing is automated, usually minutes &mdash; and you get a signed <code>.xpi</code> file. On Firefox for Android: Settings &rarr; About Firefox &rarr; tap the logo five times to unlock the debug menu, then Settings &rarr; <b>Install extension from file</b>.</li>
     </ol>
   </section>
