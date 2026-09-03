@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.5.0';
+  var VERSION = '0.5.1';
   var MAP_KEY = 'deepdive.byConvo.v1';
   var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -234,26 +234,57 @@
   var toastEl = $('toast'), listEl = $('list'), manualEl = $('manual');
   var hlLayer = $('hlLayer'), bar = $('bar'), notebox = $('notebox');
 
-  // Focus guard for our text fields: keep key events away from the page's
-  // global hotkey handlers, and take focus back when the page steals it
-  // without a user tap (a tap is the user's own decision to leave).
-  var lastPointerTs = 0;
-  document.addEventListener('pointerdown', function () { lastPointerTs = Date.now(); }, true);
+  // Focus guard for our text fields. Three layers:
+  // 1. Key events targeted at our UI are stopped at window-capture, before
+  //    the page's own capture- or bubble-phase hotkey handlers can see them.
+  // 2. Pointer tracking distinguishes "the user tapped somewhere else" (a
+  //    legitimate focus move) from "the page stole focus mid-typing" — a tap
+  //    on the guarded field itself never counts as leaving it.
+  // 3. On a steal, focus and the caret position are restored.
+  var lastPointer = { ts: 0, target: null, inHost: false };
+  document.addEventListener('pointerdown', function (e) {
+    lastPointer = { ts: Date.now(), target: null, inHost: e.target === host };
+  }, true);
+  root.addEventListener('pointerdown', function (e) {
+    lastPointer = { ts: Date.now(), target: e.target, inHost: true };
+  }, true);
+  ['keydown', 'keypress', 'keyup'].forEach(function (t) {
+    window.addEventListener(t, function (e) {
+      if (e.target !== host) return;
+      e.stopPropagation();
+      // Target-phase listeners never fire once propagation stops, so the
+      // notebox's Enter-to-add is handled here.
+      if (t === 'keydown' && e.key === 'Enter' && root.activeElement === $('noteInput')) {
+        noteboxAdd();
+      }
+    }, true);
+  });
   var refocusLog = [];
+  function pointerExplainsBlur(el) {
+    if (Date.now() - lastPointer.ts >= 600) return false;
+    // A fresh tap on this very field is how it GOT focus, not a reason to
+    // give it up; any other recent tap is the user moving on.
+    return !(lastPointer.inHost && lastPointer.target === el);
+  }
   function guardInput(el) {
     ['keydown', 'keyup', 'keypress'].forEach(function (t) {
       el.addEventListener(t, function (e) { e.stopPropagation(); });
     });
     el.addEventListener('blur', function () {
-      if (Date.now() - lastPointerTs < 500) return;
+      if (pointerExplainsBlur(el)) return;
       var now = Date.now();
-      refocusLog = refocusLog.filter(function (t) { return now - t < 1500; });
-      if (refocusLog.length >= 4) return; // don't fight a persistent page forever
+      refocusLog = refocusLog.filter(function (ts) { return now - ts < 2000; });
+      if (refocusLog.length >= 6) return; // don't fight a persistent page forever
       refocusLog.push(now);
+      var caret = null;
+      try { caret = el.selectionStart; } catch (e) {}
       setTimeout(function () {
-        if (el.isConnected && el.offsetParent !== null && Date.now() - lastPointerTs > 400) {
-          try { el.focus(); } catch (e) {}
-        }
+        if (!el.isConnected || el.offsetParent === null) return;
+        if (pointerExplainsBlur(el)) return;
+        try {
+          el.focus();
+          if (typeof caret === 'number') el.setSelectionRange(caret, caret);
+        } catch (e) {}
       }, 0);
     });
   }
@@ -737,6 +768,14 @@
   $('closeBtn').addEventListener('click', closeSheet);
 
   function renderList() {
+    // Rebuilding destroys a note input the user may be typing in (e.g. a
+    // route-watcher refresh) — carry focus and caret across the rebuild.
+    var focusFid = null, focusCaret = 0;
+    var ae = root.activeElement;
+    if (ae && ae.tagName === 'INPUT' && ae.getAttribute('data-fid')) {
+      focusFid = ae.getAttribute('data-fid');
+      try { focusCaret = ae.selectionStart || 0; } catch (e) {}
+    }
     listEl.textContent = '';
     if (!fragments.length) {
       var empty = document.createElement('div');
@@ -763,6 +802,12 @@
     fragments.forEach(function (f, i) {
       listEl.appendChild(buildFragItem(f, i));
     });
+    if (focusFid) {
+      var again = listEl.querySelector('input[data-fid="' + focusFid + '"]');
+      if (again) {
+        try { again.focus(); again.setSelectionRange(focusCaret, focusCaret); } catch (e) {}
+      }
+    }
     positionPill();
   }
 
@@ -801,6 +846,7 @@
     note.type = 'text';
     note.placeholder = 'annotation (now or later)';
     note.value = f.note || '';
+    note.setAttribute('data-fid', f.id);
     note.addEventListener('input', function () { f.note = note.value; persist(); });
     guardInput(note);
 
