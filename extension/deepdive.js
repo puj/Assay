@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.6.0';
+  var VERSION = '0.6.1';
   var MAP_KEY = 'deepdive.byConvo.v1';
   var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -298,8 +298,12 @@
   }
 
   function updatePill() {
-    $('count').textContent = String(fragments.length);
-    pill.classList.toggle('show', fragments.length > 0 || sheetOpen);
+    // Always reachable: the sheet also holds the conversation download
+    // buttons, which are useful with zero fragments collected.
+    var n = fragments.length;
+    $('count').textContent = String(n);
+    $('count').style.display = n ? 'flex' : 'none';
+    pill.classList.add('show');
     positionPill();
   }
 
