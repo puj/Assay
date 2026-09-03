@@ -1,0 +1,94 @@
+# Auto-publish DigBoard to the extension stores on merge to master.
+#
+# INERT UNTIL CONFIGURED: each store's FIRST listing must be created by hand
+# (see store/SUBMIT-CHECKLIST.md); after that, add these repo secrets and
+# every merge that changes the extension ships a new version:
+#
+#   AMO_JWT_ISSUER / AMO_JWT_SECRET
+#     addons.mozilla.org → Tools → Manage API Keys
+#   CWS_CLIENT_ID / CWS_CLIENT_SECRET / CWS_REFRESH_TOKEN / CWS_EXTENSION_ID
+#     Chrome Web Store API OAuth (guide: developer.chrome.com/docs/webstore/using-api)
+#
+# Remember to bump VERSION in src/deepdive.core.js — both stores reject a
+# re-upload of an already-published version, which is what makes this safe
+# to run on every merge.
+
+name: Release to extension stores
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'src/**'
+      - 'extension/**'
+      - 'build.js'
+      - 'install.template.html'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node build.js
+      - id: meta
+        run: echo "version=$(node -p "require('./extension/manifest.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digboard-${{ steps.meta.outputs.version }}
+          path: |
+            digboard-extension.zip
+            deepdive.user.js
+            install.html
+
+  publish-firefox:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node build.js
+      - name: Submit to AMO (listed channel)
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if [ -z "$AMO_JWT_ISSUER" ]; then
+            echo "AMO secrets not configured - skipping Firefox publish."
+            exit 0
+          fi
+          npx web-ext@8 sign --channel=listed \
+            --source-dir=extension \
+            --api-key="$AMO_JWT_ISSUER" \
+            --api-secret="$AMO_JWT_SECRET" \
+            --approval-timeout=0
+
+  publish-chrome:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node build.js
+      - name: Upload and publish to Chrome Web Store
+        env:
+          EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          if [ -z "$REFRESH_TOKEN" ]; then
+            echo "Chrome Web Store secrets not configured - skipping Chrome publish."
+            exit 0
+          fi
+          npx chrome-webstore-upload-cli@3 upload \
+            --source digboard-extension.zip \
+            --auto-publish

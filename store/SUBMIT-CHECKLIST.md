@@ -54,7 +54,31 @@ Microsoft Partner Center accepts the same zip; Edge desktop and Edge
 Android both read from it. Free registration. Same listing copy. Worth it
 for near-zero effort once the CWS listing text exists.
 
-## 4. Discoverability after listing
+## 4. After the first manual listing: turn on auto-publish
+
+`.github/workflows/release.yml` ships every merge to master that touches
+the extension, once these repo secrets exist (Settings → Secrets →
+Actions):
+
+- [ ] `AMO_JWT_ISSUER` + `AMO_JWT_SECRET` — addons.mozilla.org → Tools →
+      Manage API Keys.
+- [ ] `CWS_CLIENT_ID` + `CWS_CLIENT_SECRET` + `CWS_REFRESH_TOKEN` +
+      `CWS_EXTENSION_ID` — Chrome Web Store API OAuth
+      (developer.chrome.com/docs/webstore/using-api); the extension id
+      comes from the dashboard after the first manual upload.
+- [ ] Each release needs a VERSION bump in `src/deepdive.core.js` — stores
+      reject duplicate versions, so an unbumped merge fails the publish
+      step harmlessly.
+- [ ] Users then auto-update: Chrome polls for extension updates every few
+      hours, Firefox about daily, once the store approves the version.
+- [ ] When the repo goes public, add `@updateURL`/`@downloadURL` (raw
+      GitHub URL of deepdive.user.js) to the userscript header so
+      Tampermonkey installs auto-update too. Store installs need nothing —
+      and switching a phone from the userscript to the store extension
+      keeps all fragments, since they live in the site's localStorage, not
+      in the extension.
+
+## 5. Discoverability after listing
 
 - [ ] AMO + CWS listing URLs onto projectnothing.ai (a /digboard page that
       also hosts the privacy policy and links the install page for the
