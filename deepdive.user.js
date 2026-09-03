@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DigBoard — deep dive for AI chats
 // @namespace    https://github.com/puj/Diveboard
-// @version      0.5.1
+// @version      0.6.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @match        https://chatgpt.com/*
@@ -17,7 +17,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.5.1';
+  var VERSION = '0.6.0';
   var MAP_KEY = 'deepdive.byConvo.v1';
   var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -446,15 +446,85 @@
     return { start: s0.start, end: s1.end };
   }
 
-  function flatten(block) {
-    var nodes = [], text = '';
-    var w = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, null);
-    var n;
-    while ((n = w.nextNode())) {
-      nodes.push({ node: n, start: text.length, end: text.length + n.nodeValue.length });
-      text += n.nodeValue;
+  // A selection lives inside one message and can span its paragraphs. Blocks
+  // are the message's text-bearing elements, laid out on one virtual text
+  // axis with a 2-char gap between blocks; words/sentences carry absolute
+  // offsets on that axis.
+  var BLOCK_SEL = 'p,li,blockquote,h1,h2,h3,h4,h5,h6,td,th,dd,dt,pre';
+
+  function buildBlocks(container) {
+    var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+    var blocks = [], cur = null, n;
+    while ((n = walker.nextNode())) {
+      if (!n.nodeValue) continue;
+      var el = n.parentElement;
+      if (!el) continue;
+      if (el.closest('button,[role="button"],svg,style,script')) continue;
+      var anchor = el.closest(BLOCK_SEL);
+      if (!anchor || !container.contains(anchor)) continue;
+      if (!cur || cur.el !== anchor) {
+        cur = { el: anchor, nodes: [], text: '' };
+        blocks.push(cur);
+      }
+      cur.nodes.push({ node: n, start: cur.text.length, end: cur.text.length + n.nodeValue.length });
+      cur.text += n.nodeValue;
     }
-    return { nodes: nodes, text: text };
+    blocks = blocks.filter(function (b) { return b.text.trim().length > 0; });
+    var off = 0;
+    blocks.forEach(function (b) {
+      b.start = off;
+      b.end = off + b.text.length;
+      off = b.end + 2; // virtual paragraph gap
+      var shift = function (seg) { return { start: seg.start + b.start, end: seg.end + b.start }; };
+      b.words = segmentWords(b.text).map(shift);
+      b.sentences = segmentSentences(b.text).map(shift);
+    });
+    return blocks;
+  }
+
+  function blockAt(blocks, off) {
+    for (var i = 0; i < blocks.length; i++) {
+      if (off >= blocks[i].start && off <= blocks[i].end) return blocks[i];
+    }
+    return null;
+  }
+
+  function absOffset(blocks, node, offset) {
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i];
+      for (var j = 0; j < b.nodes.length; j++) {
+        if (b.nodes[j].node === node) return b.start + b.nodes[j].start + offset;
+      }
+    }
+    return -1;
+  }
+
+  function domPointAbs(blocks, off) {
+    var b = blockAt(blocks, off);
+    if (!b) return null;
+    var local = off - b.start;
+    for (var i = 0; i < b.nodes.length; i++) {
+      var e = b.nodes[i];
+      if (local < e.end || i === b.nodes.length - 1) {
+        return { node: e.node, offset: Math.max(0, Math.min(local - e.start, e.node.nodeValue.length)) };
+      }
+    }
+    return null;
+  }
+
+  function rectsForSpan(blocks, start, end) {
+    var a = domPointAbs(blocks, start);
+    var b = domPointAbs(blocks, end);
+    if (!a || !b) return null;
+    try {
+      var r = document.createRange();
+      r.setStart(a.node, a.offset);
+      r.setEnd(b.node, b.offset);
+      var rects = r.getClientRects();
+      return rects.length ? rects : null;
+    } catch (e) {
+      return null;
+    }
   }
 
   function caretPoint(x, y) {
@@ -471,40 +541,16 @@
     return null;
   }
 
-  function flatOffset(flat, node, offset) {
-    for (var i = 0; i < flat.nodes.length; i++) {
-      if (flat.nodes[i].node === node) return flat.nodes[i].start + offset;
-    }
-    return -1;
-  }
-
-  function domPoint(flat, off) {
-    for (var i = 0; i < flat.nodes.length; i++) {
-      var e = flat.nodes[i];
-      if (off < e.end || i === flat.nodes.length - 1) {
-        return { node: e.node, offset: Math.max(0, Math.min(off - e.start, e.node.nodeValue.length)) };
-      }
-    }
-    return null;
-  }
-
-  function rectsFor(flat, start, end) {
-    var a = domPoint(flat, start);
-    var b = domPoint(flat, end);
-    if (!a || !b) return null;
-    try {
-      var r = document.createRange();
-      r.setStart(a.node, a.offset);
-      r.setEnd(b.node, b.offset);
-      var rects = r.getClientRects();
-      return rects.length ? rects : null;
-    } catch (e) {
-      return null;
-    }
-  }
-
   function pendingText() {
-    return pending.flat.text.slice(pending.start, pending.end).trim();
+    var parts = [];
+    pending.blocks.forEach(function (b) {
+      var s = Math.max(pending.start, b.start), e = Math.min(pending.end, b.end);
+      if (e > s) {
+        var t = b.text.slice(s - b.start, e - b.start).trim();
+        if (t) parts.push(t);
+      }
+    });
+    return parts.join('\n\n');
   }
 
   function clearPending() {
@@ -533,14 +579,15 @@
     hlLayer.textContent = '';
     // Session marks for already-collected fragments (drop dead ones quietly).
     marks = marks.filter(function (m) {
-      if (!m.block.isConnected) return false;
-      var rects = rectsFor(m.flat, m.start, m.end);
+      var alive = m.blocks.some(function (b) { return b.el.isConnected; });
+      if (!alive) return false;
+      var rects = rectsForSpan(m.blocks, m.start, m.end);
       if (!rects) return false;
       paintRects(rects, 'rgba(' + PALETTE[m.colorIdx].rgb + ',.18)');
       return true;
     });
     if (!pending) { bar.classList.remove('show'); return; }
-    var rects = rectsFor(pending.flat, pending.start, pending.end);
+    var rects = rectsForSpan(pending.blocks, pending.start, pending.end);
     if (!rects) { pending = null; bar.classList.remove('show'); return; }
     paintRects(rects, 'rgba(' + PALETTE[nextColorIdx()].rgb + ',.34)');
     var last = rects[rects.length - 1];
@@ -571,15 +618,19 @@
     return null;
   }
 
-  function beginPending(block, flat, foff) {
-    var words = segmentWords(flat.text);
-    var w = wordAt(words, foff);
+  // The message that a tapped block belongs to; blocks fall back to
+  // themselves on unknown layouts, giving single-paragraph behavior there.
+  function findContainer(block) {
+    return block.closest('[data-message-author-role],[data-testid="user-message"],.font-claude-message') || block;
+  }
+
+  function beginPending(container, blocks, foff) {
+    var b = blockAt(blocks, foff);
+    var w = b && wordAt(b.words, foff);
     if (!w) return false;
     pending = {
-      block: block,
-      flat: flat,
-      words: words,
-      sentences: segmentSentences(flat.text),
+      container: container,
+      blocks: blocks,
       start: w.start,
       end: w.end,
       scope: 'word',
@@ -595,17 +646,22 @@
       p.start = p.aw0; p.end = p.aw1; p.scope = 'word';
       return;
     }
+    var bs = blockAt(p.blocks, p.start);
+    var be = blockAt(p.blocks, Math.max(p.start, p.end - 1));
+    if (!bs || !be) return;
     if (p.scope === 'sentence') {
-      p.start = 0; p.end = p.flat.text.length; p.scope = 'paragraph';
+      p.start = bs.start; p.end = be.end; p.scope = 'paragraph';
       return;
     }
-    // word or custom → the sentence(s) covering the current selection;
-    // if that changes nothing, go straight to the paragraph.
-    var sb = sentenceBounds(p.sentences, p.start, p.end);
-    if (sb.start === p.start && sb.end === p.end) {
-      p.start = 0; p.end = p.flat.text.length; p.scope = 'paragraph';
+    // word or custom → the sentence(s) covering the current selection
+    // (per touched block); if that changes nothing, go straight to the
+    // full paragraph(s).
+    var s0 = sentenceBounds(bs.sentences, p.start, Math.min(p.end, bs.end));
+    var s1 = sentenceBounds(be.sentences, Math.max(p.start, be.start), p.end);
+    if (s0.start === p.start && s1.end === p.end) {
+      p.start = bs.start; p.end = be.end; p.scope = 'paragraph';
     } else {
-      p.start = sb.start; p.end = sb.end; p.scope = 'sentence';
+      p.start = s0.start; p.end = s1.end; p.scope = 'sentence';
     }
   }
 
@@ -624,16 +680,20 @@
     var cp = caretPoint(e.clientX, e.clientY);
     if (!cp) { clearPending(); return; }
 
-    if (pending && pending.block === block) {
-      var off = flatOffset(pending.flat, cp.node, cp.offset);
+    var container = findContainer(block);
+    if (pending && pending.container === container) {
+      // Same message: grow (across paragraphs too) or cycle the scope.
+      // Restarting here is deliberate friction — ✕ on the bar, or tap a
+      // different message / empty space to start over.
+      var off = absOffset(pending.blocks, cp.node, cp.offset);
       if (off >= 0) {
         if (off >= pending.start && off <= pending.end) {
           cycleScope();
           redraw();
           return;
         }
-        // Outside the highlight, same block: grow toward the tapped word.
-        var w = wordAt(pending.words, off);
+        var b2 = blockAt(pending.blocks, off);
+        var w = b2 && wordAt(b2.words, off);
         if (w) {
           if (off >= pending.end) pending.end = Math.max(pending.end, w.end);
           else pending.start = Math.min(pending.start, w.start);
@@ -642,20 +702,21 @@
           return;
         }
       }
+      // Stale nodes (the site re-rendered): fall through and rebuild.
     }
-    var flat = flatten(block);
-    var foff = flatOffset(flat, cp.node, cp.offset);
+    var blocks = buildBlocks(container);
+    var foff = absOffset(blocks, cp.node, cp.offset);
     if (foff < 0) { clearPending(); return; }
     hideChip();
     notebox.classList.remove('show');
-    if (!beginPending(block, flat, foff)) { clearPending(); return; }
+    if (!beginPending(container, blocks, foff)) { clearPending(); return; }
     redraw();
   });
 
   function collectPending(note, notePos) {
     var p = pending;
     var colorIdx = addFragment(pendingText(), note, notePos);
-    marks.push({ flat: p.flat, block: p.block, start: p.start, end: p.end, colorIdx: colorIdx });
+    marks.push({ blocks: p.blocks, start: p.start, end: p.end, colorIdx: colorIdx });
     clearPending();
   }
 
