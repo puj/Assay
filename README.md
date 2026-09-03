@@ -3,9 +3,11 @@
 Editorial selection over AI conversations, on your phone. While reading a
 ChatGPT (or Claude) response in a mobile browser, **tap a word** — it
 highlights with a small action bar. Tap the highlight to widen the scope
-(word → sentence → paragraph → back to the word); tap words outside the
-highlight to grow the selection in that direction, word by word; long-press
-selection still works for arbitrary spans. **＋ Add** collects; **✎ Note**
+(word → sentence(s) → paragraph(s) → back to the word); tap other words in
+the same reply to grow the selection toward them, word by word — across
+paragraph boundaries too. A selection lives inside one reply: tapping a
+different reply (or empty space, or ✕) starts over, keeping deselection
+intuitive. Long-press selection still works for arbitrary spans. **＋ Add** collects; **✎ Note**
 annotates now, with the note placed *before* or *after* the quote; the sheet
 lets you annotate later. Each fragment takes the next of six rotating
 highlight colors and its mark stays tinted on the page for the session. The
