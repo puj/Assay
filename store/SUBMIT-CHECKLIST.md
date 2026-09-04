@@ -95,6 +95,17 @@ Actions):
 - [ ] AMO + CWS listing URLs onto projectnothing.ai (a /assay page that
       also hosts the privacy policy and links the install page for the
       userscript/bookmarklet paths).
+- [ ] **Before making the repo public:** the two release tags still point at
+      pre-scrub commits. History on `master` was rewritten to remove a
+      personal email, but tag refs could not be moved from the build
+      session (403 on `refs/tags/*`). From a fresh clone, run:
+          git fetch --tags origin
+          git push origin :refs/tags/v0.8.0 :refs/tags/v0.8.1
+          git tag -f v0.8.0 f785eeb && git tag -f v0.8.1 c3f9da2
+          git push origin refs/tags/v0.8.0 refs/tags/v0.8.1
+      Then ask GitHub Support to purge unreachable objects for the repo —
+      orphaned commits stay fetchable by SHA until they do. The published
+      release assets are already verified clean.
 - [ ] Make github.com/puj/Assay public once the first listing is up —
       "open source, local-only" is the trust signal this category lives on.
       LICENSE (MIT) and the README trademark notice are already in place.
