@@ -103,3 +103,23 @@ deliberately — the reading/deep-dive loop needs to prove itself first.
 - A shared cross-conversation fragment list, and an archive across sessions.
 - Editable payload templates.
 - Claude-specific selector hardening; store submission for one-tap installs.
+
+## Website and hosting
+
+`site/` is the public site, deployed from this repo as its own Vercel
+project at **winnow.projectnothing.ai** (root directory `site`, no build
+step). It serves the landing page with browser-aware store buttons, the
+install page, the privacy policy, and the raw `winnow.user.js` — which
+Tampermonkey can install straight from the URL and auto-update from, via the
+`@updateURL` in the script header. `node build.js` refreshes the generated
+files in `site/`. The umbrella site only needs `projectnothing.ai/winnow` to
+redirect here.
+
+## License and trademark
+
+The code is released under the [MIT License](LICENSE). The **Winnow** name,
+the "sifted rows" mark, and the Project Nothing name are trademarks of
+Project Nothing and are *not* covered by that license: you are free to fork,
+modify and redistribute the code, but a fork distributed to the public must
+use its own name and icon so users can tell it apart from the official
+builds on the extension stores.

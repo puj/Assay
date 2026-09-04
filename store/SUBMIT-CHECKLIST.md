@@ -5,10 +5,17 @@ payments, forms). Budget ~1 hour of clicking total.
 
 ## 0. One-time prep (both stores)
 
-- [ ] Host `store/privacy.html` at a public URL (e.g.
-      projectnothing.ai/winnow/privacy). The contact email in it is
-      currently vango85@gmail.com — swap for an alias if you don't want it
-      public; stores also display your developer contact email.
+- [ ] Deploy the site: Vercel → Add New Project → import **puj/Winnow** →
+      Root Directory `site`, Framework "Other", no build command → add
+      domain **winnow.projectnothing.ai** (CNAME to cname.vercel-dns.com
+      in the projectnothing.ai DNS). That publishes the landing page,
+      /install, /privacy and the auto-updating /winnow.user.js.
+- [ ] In the ProjectNothing repo, redirect `/winnow` →
+      https://winnow.projectnothing.ai (vercel.json `redirects`, or the
+      framework's redirect config) and add Winnow to the experiments index.
+- [ ] The contact email in `site/privacy.html` is currently
+      vango85@gmail.com — swap for an alias if you don't want it public;
+      stores also display your developer contact email.
 - [ ] Decide trader status (EU DSA question both stores ask). Monetizing →
       "trader", and your contact details become publicly visible on the
       listing.
@@ -23,8 +30,8 @@ payments, forms). Budget ~1 hour of clicking total.
 - [ ] Paste name/summary/description/tags/categories from `LISTING.md`;
       slug `winnow`; upload `extension/icons/icon128.png` and the
       screenshots from `store/`.
-- [ ] License: pick one (MIT keeps it simple and matches the open-core
-      plan). Privacy policy: paste the hosted URL.
+- [ ] License: MIT (matches the repo `LICENSE`). Privacy policy URL:
+      https://winnow.projectnothing.ai/privacy.
 - [ ] Android compatibility is declared in the manifest
       (`gecko_android`) — confirm the "Firefox for Android" checkbox is on.
 - [ ] Expect automated approval in minutes–hours; occasional human
@@ -83,9 +90,9 @@ Actions):
 - [ ] AMO + CWS listing URLs onto projectnothing.ai (a /winnow page that
       also hosts the privacy policy and links the install page for the
       userscript/bookmarklet paths).
-- [ ] Make the GitHub repo public (or split Winnow into its own public
-      repo) — "open source, local-only" is the trust signal this category
-      lives on, and the store listings can link it.
+- [ ] Make github.com/puj/Winnow public once the first listing is up —
+      "open source, local-only" is the trust signal this category lives on.
+      LICENSE (MIT) and the README trademark notice are already in place.
 - [ ] Post the Project Nothing experiment write-up ("LLM Margin Notes")
       linking both stores — store ranking feeds on external clicks and
       installs in the first weeks.
