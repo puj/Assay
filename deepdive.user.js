@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DigBoard — deep dive for AI chats
 // @namespace    https://github.com/puj/Diveboard
-// @version      0.6.1
+// @version      0.6.2
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @match        https://chatgpt.com/*
@@ -17,7 +17,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.6.1';
+  var VERSION = '0.6.2';
   var MAP_KEY = 'deepdive.byConvo.v1';
   var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -355,15 +355,15 @@
   }
 
   function addFragment(text, note, notePos) {
-    var colorIdx = nextColorIdx();
-    fragments.push({
+    var frag = {
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
       text: text,
       note: note || '',
       notePos: notePos || 'post',
-      colorIdx: colorIdx,
+      colorIdx: nextColorIdx(),
       ts: Date.now()
-    });
+    };
+    fragments.push(frag);
     persist();
     updatePill();
     if (sheetOpen) {
@@ -378,7 +378,7 @@
       }
     }
     toast('Collected — ' + fragments.length + ' fragment' + (fragments.length > 1 ? 's' : ''));
-    return colorIdx;
+    return frag;
   }
 
   // -------------------------------------------------- tap-to-collect engine
@@ -719,8 +719,8 @@
 
   function collectPending(note, notePos) {
     var p = pending;
-    var colorIdx = addFragment(pendingText(), note, notePos);
-    marks.push({ blocks: p.blocks, start: p.start, end: p.end, colorIdx: colorIdx });
+    var frag = addFragment(pendingText(), note, notePos);
+    marks.push({ fid: frag.id, blocks: p.blocks, start: p.start, end: p.end, colorIdx: frag.colorIdx });
     clearPending();
   }
 
@@ -912,7 +912,9 @@
     del.textContent = '✕';
     del.addEventListener('click', function () {
       fragments = fragments.filter(function (x) { return x.id !== f.id; });
-      persist(); updatePill(); renderList();
+      // Its tinted mark on the page goes with it.
+      marks = marks.filter(function (m) { return m.fid !== f.id; });
+      persist(); updatePill(); renderList(); redraw();
     });
 
     top.appendChild(idx); top.appendChild(txt); top.appendChild(del);
@@ -1126,6 +1128,17 @@
       document.querySelector('main textarea');
   }
 
+  // The payload landed but structure did too? Check the first and last
+  // meaningful lines are present — a run-on paste passes a naive check.
+  function composerHas(el, text) {
+    var hay = ((el.tagName === 'TEXTAREA' ? el.value : el.innerText) || '');
+    var lines = text.split('\n').filter(function (l) { return l.trim(); });
+    if (!lines.length) return false;
+    var first = lines[0].slice(0, 20);
+    var last = lines[lines.length - 1].slice(0, 20);
+    return hay.indexOf(first) !== -1 && hay.indexOf(last) !== -1;
+  }
+
   function insertIntoComposer(text) {
     var el = findComposer();
     if (!el) return false;
@@ -1136,13 +1149,34 @@
         var setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
         setter.call(el, el.value ? el.value + '\n\n' + text : text);
         el.dispatchEvent(new Event('input', { bubbles: true }));
-        return el.value.indexOf(text.slice(0, 30)) !== -1;
+        return composerHas(el, text);
       }
-      // contenteditable (ProseMirror on both ChatGPT and Claude):
-      // a synthetic paste is the most faithful multi-line insert.
+      // contenteditable (ProseMirror on both ChatGPT and Claude).
       var sel = window.getSelection();
       sel.selectAllChildren(el);
       sel.collapseToEnd();
+      // Structured insertion keeps the payload human-readable: a paragraph
+      // break between fragments, a line break within one. A single
+      // insertText with embedded newlines flattens to a run-on in
+      // ProseMirror, which is exactly the bug this avoids.
+      try {
+        text.split('\n\n').forEach(function (para, i) {
+          if (i > 0) {
+            var ok = false;
+            try { ok = document.execCommand('insertParagraph'); } catch (e2) {}
+            if (!ok) {
+              document.execCommand('insertLineBreak');
+              document.execCommand('insertLineBreak');
+            }
+          }
+          para.split('\n').forEach(function (line, j) {
+            if (j > 0) document.execCommand('insertLineBreak');
+            if (line) document.execCommand('insertText', false, line);
+          });
+        });
+      } catch (e) {}
+      if (composerHas(el, text)) return true;
+      // Fallback: a synthetic paste, which some editors handle natively.
       try {
         var dt = new DataTransfer();
         dt.setData('text/plain', text);
@@ -1150,9 +1184,7 @@
           clipboardData: dt, bubbles: true, cancelable: true
         }));
       } catch (e) {}
-      if ((el.innerText || '').indexOf(text.slice(0, 30)) !== -1) return true;
-      try { document.execCommand('insertText', false, text); } catch (e) {}
-      return (el.innerText || '').indexOf(text.slice(0, 30)) !== -1;
+      return composerHas(el, text);
     } catch (e) {
       return false;
     }
