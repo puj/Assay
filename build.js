@@ -71,9 +71,18 @@ fs.writeFileSync(path.join(site, 'assay.user.js'), userscript);
 fs.copyFileSync(path.join(dir, 'extension', 'icons', 'icon128.png'), path.join(site, 'icon.png'));
 fs.copyFileSync(path.join(dir, 'extension', 'icons', 'icon256.png'), path.join(site, 'icon-256.png'));
 
+// Reproducible package: the zip is built from a staging copy whose file
+// times are pinned, so rebuilding any tagged commit yields a byte-identical
+// zip — the checksum on a GitHub Release can be verified by anyone.
 let zipNote = 'zip tool not found — skipped extension zip';
 try {
-  execSync('cd "' + path.join(dir, 'extension') + '" && rm -f ../assay-extension.zip && zip -q -X -r ../assay-extension.zip manifest.json assay.js icons', { stdio: 'pipe' });
+  const stage = fs.mkdtempSync(path.join(require('os').tmpdir(), 'assay-pkg-'));
+  fs.cpSync(path.join(dir, 'extension'), stage, { recursive: true });
+  const pin = new Date('2026-01-01T00:00:00Z');
+  const walk = (p) => { fs.utimesSync(p, pin, pin); if (fs.statSync(p).isDirectory()) fs.readdirSync(p).forEach(n => walk(path.join(p, n))); };
+  walk(stage);
+  execSync('cd "' + stage + '" && rm -f "' + path.join(dir, 'assay-extension.zip') + '" && zip -q -X -r -D "' + path.join(dir, 'assay-extension.zip') + '" manifest.json assay.js icons', { stdio: 'pipe' });
+  fs.rmSync(stage, { recursive: true, force: true });
   zipNote = 'assay-extension.zip';
 } catch (e) {}
 
