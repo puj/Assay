@@ -16,7 +16,8 @@ stays scrollable, and taps keep collecting. **↗ To composer** writes just
 the fragments and annotations into the site's composer — no wrapper prompt,
 the annotations carry the intent — for you to review and send.
 **⭳ .md / ⭳ .txt** download the entire current conversation — roles, text,
-code blocks — with the collected fragments appended, all locally (verbatim
+code blocks — with the collected fragments appended, all locally, as
+`digboard-<chat title>-<timestamp>.md/.txt` (verbatim
 export captures what's loaded on the page, so scroll up first on very long
 threads). Note controls and the sheet track `visualViewport`, so the
 on-screen keyboard never covers them.
