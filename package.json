@@ -1,6 +1,6 @@
 {
-  "name": "winnow",
-  "version": "0.7.0",
+  "name": "assay",
+  "version": "0.8.0",
   "private": true,
   "description": "Tap, collect, annotate and deep-dive passages in AI chats. A Project Nothing experiment.",
   "license": "MIT",

@@ -1,4 +1,4 @@
-# Winnow — store listing copy
+# Assay — store listing copy
 
 One source for both stores. Titles avoid third-party trademarks (store
 policy); "works with ChatGPT and Claude" appears only in descriptions,
@@ -6,13 +6,13 @@ where nominative compatibility statements are accepted.
 
 ## Names
 
-- **Product name:** Winnow
-- **Chrome Web Store title (45-char guideline):** `Winnow: Deep Dive for AI Chats`
-- **Firefox AMO name:** `Winnow: Deep Dive for AI Chats`
-- **AMO URL slug:** `winnow`
+- **Product name:** Assay
+- **Chrome Web Store title (45-char guideline):** `Assay: Deep Dive for AI Chats`
+- **Firefox AMO name:** `Assay: Deep Dive for AI Chats`
+- **AMO URL slug:** `assay`
 - Riskier high-keyword variant (some reviewers allow "for X" nominative use,
   some reject it — only try if the safe title underperforms):
-  `Winnow: Highlight & Deep Dive for ChatGPT`
+  `Assay: Highlight & Deep Dive for ChatGPT`
 
 ## Short description
 
@@ -25,7 +25,7 @@ Chrome (132-char limit) / AMO summary:
 
 > **Reading an AI answer is easy. Thinking with it is the hard part.**
 >
-> Winnow turns AI conversations into a selectable thinking surface. While
+> Assay turns AI conversations into a selectable thinking surface. While
 > you read, tap any word to highlight it — tap again to widen to the
 > sentence or the whole paragraph, or tap nearby words to grow the
 > selection. Collect several passages, add a short annotation to each, and
@@ -50,7 +50,7 @@ Chrome (132-char limit) / AMO summary:
 >
 > Works with ChatGPT (chatgpt.com) and Claude (claude.ai). On Android, use
 > Firefox to run it on mobile. A Project Nothing experiment.
-> Winnow is not affiliated with OpenAI or Anthropic.
+> Assay is not affiliated with OpenAI or Anthropic.
 
 ## Keywords (AMO tags / worked into descriptions)
 
@@ -75,8 +75,8 @@ reading tool, note taking
 - **Remote code:** None. **Data collection:** None — all state is in
   localStorage on the user's device. Select "Does not collect or use user
   data"; certify the disclosures.
-- **Privacy policy URL:** https://winnow.projectnothing.ai/privacy (served from `site/privacy.html`).
-- **License (AMO field):** MIT. Homepage: https://winnow.projectnothing.ai. Support: https://github.com/puj/Winnow/issues.
+- **Privacy policy URL:** https://assay.projectnothing.ai/privacy (served from `site/privacy.html`).
+- **License (AMO field):** MIT. Homepage: https://assay.projectnothing.ai. Support: https://github.com/puj/Assay/issues.
 
 ## Assets checklist
 
@@ -86,4 +86,4 @@ reading tool, note taking
 | Icons 16/32/48 | `extension/icons/` | manifest |
 | Screenshots ×3 | `store/screenshot-1..3.png` | CWS: 1280×800, ≥1 required; AMO: optional but listed |
 | Small promo tile | `store/promo-tile.png` | CWS: 440×280, required field |
-| Privacy policy | `site/privacy.html` → winnow.projectnothing.ai/privacy | both |
+| Privacy policy | `site/privacy.html` → assay.projectnothing.ai/privacy | both |

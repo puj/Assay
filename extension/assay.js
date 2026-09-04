@@ -1,30 +1,12 @@
-// ==UserScript==
-// @name         Winnow — deep dive for AI chats
-// @namespace    https://projectnothing.ai/winnow
-// @version      0.7.0
-// @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
-// @author       puj
-// @homepageURL  https://winnow.projectnothing.ai
-// @supportURL   https://github.com/puj/Winnow/issues
-// @updateURL    https://winnow.projectnothing.ai/winnow.user.js
-// @downloadURL  https://winnow.projectnothing.ai/winnow.user.js
-// @icon         https://winnow.projectnothing.ai/icon.png
-// @match        https://chatgpt.com/*
-// @match        https://chat.openai.com/*
-// @match        https://claude.ai/*
-// @grant        none
-// @run-at       document-idle
-// ==/UserScript==
-
 (function () {
   'use strict';
 
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
-  if (window.__winnow) { try { window.__winnow.toggle(); } catch (e) {} return; }
+  if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.7.0';
-  var MAP_KEY = 'winnow.byConvo.v1';
-  var BACKUP_MAP_KEY = 'winnow.backupByConvo.v1';
+  var VERSION = '0.8.0';
+  var MAP_KEY = 'assay.byConvo.v1';
+  var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
   var MIN_SEL_LEN = 4;
 
@@ -61,9 +43,10 @@
   function saveMap(key, map) {
     try { localStorage.setItem(key, JSON.stringify(map)); } catch (e) {}
   }
-  // Fragments collected under the old DeepDive/DigBoard names move to the
-  // winnow.* keys once, so nothing already on the device is orphaned.
-  [['deepdive.byConvo.v1', MAP_KEY], ['deepdive.backupByConvo.v1', BACKUP_MAP_KEY]]
+  // Fragments collected under the earlier names (DeepDive/DigBoard, Winnow)
+  // move to the assay.* keys once, so nothing already on the device is orphaned.
+  [['deepdive.byConvo.v1', MAP_KEY], ['winnow.byConvo.v1', MAP_KEY],
+   ['deepdive.backupByConvo.v1', BACKUP_MAP_KEY], ['winnow.backupByConvo.v1', BACKUP_MAP_KEY]]
     .forEach(function (pair) {
       try {
         var old = localStorage.getItem(pair[0]);
@@ -101,7 +84,7 @@
 
   // ---------------------------------------------------------------- UI shell
   var host = document.createElement('div');
-  host.id = 'winnow-host';
+  host.id = 'assay-host';
   host.style.cssText = 'all:initial;position:fixed;top:0;left:0;width:0;height:0;z-index:2147483646;';
   // Key events from inside the shadow root reach the page retargeted to this
   // bare host div, so ChatGPT's "type anywhere to focus the composer" handler
@@ -1143,7 +1126,7 @@
     var content = ext === 'md' ? buildConversationMarkdown(turns) : buildConversationText(turns);
     if (!content) { toast('Nothing to export yet'); return; }
     var slug = titleSlug();
-    var name = 'winnow-' + (slug ? slug + '-' : '') + fileStamp() + '.' + ext;
+    var name = 'assay-' + (slug ? slug + '-' : '') + fileStamp() + '.' + ext;
     var ok = download(name, content, mime);
     if (!ok) { toast('Download blocked by the browser'); return; }
     toast(turns
@@ -1277,7 +1260,7 @@
 
   updatePill();
   syncViewport();
-  window.__winnow = {
+  window.__assay = {
     toggle: toggleSheet,
     version: VERSION,
     _debug: function () {
