@@ -1,6 +1,8 @@
 # Assay — tap → collect → deep dive
 
-*A Project Nothing experiment. Previously prototyped as DeepDive / DigBoard.*
+● **a Project Nothing experiment** (`exp-0030`) — [what happened to it](https://www.projectnothing.ai/e/assay).
+*This is an experiment. It might be gone next month.* The contract is
+[EXPERIMENT.md](EXPERIMENT.md); the running record is [LOG.md](LOG.md).
 
 Editorial selection over AI conversations, on your phone. While reading a
 ChatGPT (or Claude) response in a mobile browser, **tap a word** — it
