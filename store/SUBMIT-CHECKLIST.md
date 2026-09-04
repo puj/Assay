@@ -61,10 +61,13 @@ Microsoft Partner Center accepts the same zip; Edge desktop and Edge
 Android both read from it. Free registration. Same listing copy. Worth it
 for near-zero effort once the CWS listing text exists.
 
-## 4. After the first manual listing: turn on auto-publish
+## 4. Releases and auto-publish
 
-`.github/workflows/release.yml` ships every merge to master that touches
-the extension, once these repo secrets exist (Settings → Secrets →
+Every merge to master that touches the extension builds it and creates a
+**GitHub Release** tagged `v<version>` with `assay-extension.zip`,
+`assay.user.js` and `install.html` attached — that zip is the exact file
+to upload to the stores by hand until auto-publish is on, and the file the
+workflow uploads once these repo secrets exist (Settings → Secrets →
 Actions):
 
 - [ ] `AMO_JWT_ISSUER` + `AMO_JWT_SECRET` — addons.mozilla.org → Tools →
