@@ -9,11 +9,13 @@ payments, forms). Budget ~1 hour of clicking total.
       Root Directory `site`, Framework "Other", no build command → add
       domain **assay.projectnothing.ai** (CNAME to cname.vercel-dns.com
       in the projectnothing.ai DNS). That publishes the landing page,
-      /install, /privacy and the auto-updating /assay.user.js.
-- [ ] In the ProjectNothing repo, redirect `/assay` →
+      /install and the auto-updating /assay.user.js (/privacy redirects to the
+      hosted policy on the studio domain).
+- [ ] Merge the ProjectNothing `assay` branch: it hosts the policy at
+      /assay/privacy, seeds the portfolio entry, and redirects `/assay` →
       https://assay.projectnothing.ai (vercel.json `redirects`, or the
       framework's redirect config) and add Assay to the experiments index.
-- [ ] The contact email in `site/privacy.html` is currently
+- [ ] The contact email in `PRIVACY.md` (and the hosted page) is currently
       hello@projectnothing.ai — swap for an alias if you don't want it public;
       stores also display your developer contact email.
 - [ ] Decide trader status (EU DSA question both stores ask). Monetizing →
@@ -31,7 +33,7 @@ payments, forms). Budget ~1 hour of clicking total.
       slug `assay`; upload `extension/icons/icon128.png` and the
       screenshots from `store/`.
 - [ ] License: MIT (matches the repo `LICENSE`). Privacy policy URL:
-      https://assay.projectnothing.ai/privacy.
+      https://www.projectnothing.ai/assay/privacy.
 - [ ] Android compatibility is declared in the manifest
       (`gecko_android`) — confirm the "Firefox for Android" checkbox is on.
 - [ ] Expect automated approval in minutes–hours; occasional human

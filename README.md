@@ -111,11 +111,17 @@ deliberately — the reading/deep-dive loop needs to prove itself first.
 `site/` is the public site, deployed from this repo as its own Vercel
 project at **assay.projectnothing.ai** (root directory `site`, no build
 step). It serves the landing page with browser-aware store buttons, the
-install page, the privacy policy, and the raw `assay.user.js` — which
+install page, and the raw `assay.user.js` — which
 Tampermonkey can install straight from the URL and auto-update from, via the
 `@updateURL` in the script header. `node build.js` refreshes the generated
 files in `site/`. The umbrella site only needs `projectnothing.ai/assay` to
 redirect here.
+
+## Privacy
+
+[`PRIVACY.md`](PRIVACY.md) is the source text, published at
+<https://www.projectnothing.ai/assay/privacy> — on the studio domain, so the
+URL the stores hold outlives this experiment's own subdomain.
 
 ## License and trademark
 
