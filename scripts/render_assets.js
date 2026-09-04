@@ -132,6 +132,35 @@ const mock = (caption) => `<!doctype html><html><head><meta charset="utf-8"><sty
   <div class="icon">${iconSvg}</div>
   <div><h1>Assay</h1><p><b>Tap. Collect. Deep dive.</b><br>Think with AI chats, not just read them.</p></div>`);
   await tile.screenshot({ path: ROOT + '/store/promo-tile.png' });
+  await tile.close();
+
+  // ---- store listing icon 128x128 ----
+  // The Chrome Web Store rejects listing images with an alpha channel, and the
+  // manifest icons carry one (transparent rounded corners). This renders the
+  // mark on an opaque ground instead: no omitBackground, so the PNG comes out
+  // 24-bit RGB, and the corners composite to the same dark as the tile.
+  const storeIcon = await browser.newPage({ viewport: { width: 128, height: 128 } });
+  await storeIcon.setContent(`<style>
+    body{margin:0;width:128px;height:128px;background:#111827;display:flex;align-items:center;justify-content:center}
+    svg{width:128px;height:128px;display:block}
+  </style>${iconSvg}`);
+  await storeIcon.screenshot({ path: ROOT + '/store/store-icon-128.png' });
+  await storeIcon.close();
+
+  // ---- marquee promo tile 1400x560 ----
+  const marquee = await browser.newPage({ viewport: { width: 1400, height: 560 } });
+  await marquee.setContent(`<style>
+    body{margin:0;width:1400px;height:560px;background:#111827;display:flex;align-items:center;
+      justify-content:center;gap:72px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+    .icon{width:240px;height:240px;flex:none}
+    h1{color:#f9fafb;font-size:112px;margin:0 0 18px;letter-spacing:-.02em;line-height:1}
+    p{color:#9ca3af;font-size:34px;margin:0;line-height:1.4;max-width:620px}
+    p b{color:#38bdf8;font-weight:600}
+  </style>
+  <div class="icon">${iconSvg}</div>
+  <div><h1>Assay</h1><p><b>Tap. Collect. Deep dive.</b><br>Think with AI chats, not just read them.<br>Nothing leaves your device.</p></div>`);
+  await marquee.screenshot({ path: ROOT + '/store/marquee-tile.png' });
+  await marquee.close();
   console.log('tile done');
   await browser.close();
 })().catch(e => { console.error('FAIL', e); process.exit(1); });

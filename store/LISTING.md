@@ -110,11 +110,23 @@ ChatGPT companion, Claude companion
 
 ## Assets checklist
 
+**Every listing image must be 24-bit PNG with no alpha channel.** Chrome
+rejects an RGBA file with a bare "An unknown error occurred." The manifest
+icons keep their transparency (correct for browser UI) and are *not* the
+files to upload; `store/store-icon-128.png` is. `npm run assets`
+regenerates all of them; the renderer omits `omitBackground` for these so
+they come out RGB.
+
+**Promo video** is optional and takes a YouTube URL, not a file — upload
+`marketing/assay-demo-landscape.mp4` to YouTube first if you want the slot
+filled.
+
 | Asset | File | Store requirement |
 | --- | --- | --- |
-| Icon 128 | `extension/icons/icon128.png` | CWS store icon + manifest |
-| Icons 16/32/48 | `extension/icons/` | manifest |
+| Store icon | `store/store-icon-128.png` | CWS listing icon: 128×128, **24-bit RGB, no alpha** |
+| Manifest icons | `extension/icons/icon{16,32,48,128}.png` | in the package; alpha is fine and wanted here |
 | Screenshots ×3 | `store/screenshot-1..3.png` | CWS: 1280×800, ≥1 required; AMO: optional |
 | Small promo tile | `store/promo-tile.png` | CWS: 440×280 |
+| Marquee promo tile | `store/marquee-tile.png` | CWS: 1400×560; needed to be eligible for featuring |
 | Demo video | `marketing/assay-demo-landscape.mp4` | optional; CWS takes a YouTube URL |
 | Privacy policy | `PRIVACY.md` → projectnothing.ai/assay/privacy | both |
