@@ -6,22 +6,22 @@ payments, forms). Budget ~1 hour of clicking total.
 ## 0. One-time prep (both stores)
 
 - [ ] Host `store/privacy.html` at a public URL (e.g.
-      projectnothing.ai/digboard/privacy). The contact email in it is
+      projectnothing.ai/winnow/privacy). The contact email in it is
       currently vango85@gmail.com — swap for an alias if you don't want it
       public; stores also display your developer contact email.
 - [ ] Decide trader status (EU DSA question both stores ask). Monetizing →
       "trader", and your contact details become publicly visible on the
       listing.
-- [ ] `node build.js` for a fresh `digboard-extension.zip`.
+- [ ] `node build.js` for a fresh `winnow-extension.zip`.
 
 ## 1. Firefox AMO — do this one first (free, covers desktop AND Android)
 
 - [ ] Create the account: https://addons.mozilla.org/developers/ (free).
-- [ ] Submit a new add-on → upload `digboard-extension.zip` → channel:
+- [ ] Submit a new add-on → upload `winnow-extension.zip` → channel:
       **Listed**.
 - [ ] It's plain unminified JS, so no source-code archive is needed.
 - [ ] Paste name/summary/description/tags/categories from `LISTING.md`;
-      slug `digboard`; upload `extension/icons/icon128.png` and the
+      slug `winnow`; upload `extension/icons/icon128.png` and the
       screenshots from `store/`.
 - [ ] License: pick one (MIT keeps it simple and matches the open-core
       plan). Privacy policy: paste the hosted URL.
@@ -36,7 +36,7 @@ payments, forms). Budget ~1 hour of clicking total.
 
 - [ ] Register: https://chrome.google.com/webstore/devconsole — one-time
       $5, requires 2FA on the Google account.
-- [ ] New item → upload the same `digboard-extension.zip` (Chrome ignores
+- [ ] New item → upload the same `winnow-extension.zip` (Chrome ignores
       the gecko keys; the console may show a harmless warning about them).
 - [ ] Store listing tab: title, short + full description from `LISTING.md`,
       category Productivity/Tools, icon, `store/screenshot-1..3.png`
@@ -66,13 +66,13 @@ Actions):
       `CWS_EXTENSION_ID` — Chrome Web Store API OAuth
       (developer.chrome.com/docs/webstore/using-api); the extension id
       comes from the dashboard after the first manual upload.
-- [ ] Each release needs a VERSION bump in `src/deepdive.core.js` — stores
+- [ ] Each release needs a VERSION bump in `src/winnow.core.js` — stores
       reject duplicate versions, so an unbumped merge fails the publish
       step harmlessly.
 - [ ] Users then auto-update: Chrome polls for extension updates every few
       hours, Firefox about daily, once the store approves the version.
 - [ ] When the repo goes public, add `@updateURL`/`@downloadURL` (raw
-      GitHub URL of deepdive.user.js) to the userscript header so
+      GitHub URL of winnow.user.js) to the userscript header so
       Tampermonkey installs auto-update too. Store installs need nothing —
       and switching a phone from the userscript to the store extension
       keeps all fragments, since they live in the site's localStorage, not
@@ -80,10 +80,10 @@ Actions):
 
 ## 5. Discoverability after listing
 
-- [ ] AMO + CWS listing URLs onto projectnothing.ai (a /digboard page that
+- [ ] AMO + CWS listing URLs onto projectnothing.ai (a /winnow page that
       also hosts the privacy policy and links the install page for the
       userscript/bookmarklet paths).
-- [ ] Make the GitHub repo public (or split DigBoard into its own public
+- [ ] Make the GitHub repo public (or split Winnow into its own public
       repo) — "open source, local-only" is the trust signal this category
       lives on, and the store listings can link it.
 - [ ] Post the Project Nothing experiment write-up ("LLM Margin Notes")
