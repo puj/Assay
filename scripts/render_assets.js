@@ -2,7 +2,7 @@ const { chromium } = require('playwright-core');
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const fs = require('fs');
-const core = fs.readFileSync(ROOT + '/src/winnow.core.js', 'utf8');
+const core = fs.readFileSync(ROOT + '/src/assay.core.js', 'utf8');
 const iconSvg = fs.readFileSync(ROOT + '/assets/icon.svg', 'utf8');
 
 const mock = (caption) => `<!doctype html><html><head><meta charset="utf-8"><style>
@@ -60,7 +60,7 @@ const mock = (caption) => `<!doctype html><html><head><meta charset="utf-8"><sty
     await page.mouse.click(box.x, box.y);
   };
   const sr = (page) => page.evaluate(fn => {
-    const s = document.getElementById('winnow-host').shadowRoot;
+    const s = document.getElementById('assay-host').shadowRoot;
     return eval(fn)(s);
   }, null);
 
@@ -68,10 +68,10 @@ const mock = (caption) => `<!doctype html><html><head><meta charset="utf-8"><sty
   await shot('Tap a word. Tap again for the sentence, again for the paragraph. <span>Collect as you read.</span>', async (page) => {
     await clickWord(page, 'p1', 'garbage');
     await clickWord(page, 'p1', 'garbage'); // widen to sentence
-    await page.evaluate(() => document.getElementById('winnow-host').shadowRoot.getElementById('addBtn').click());
+    await page.evaluate(() => document.getElementById('assay-host').shadowRoot.getElementById('addBtn').click());
     await clickWord(page, 'p1', 'Creators');
     await clickWord(page, 'p1', 'Creators');
-    await page.evaluate(() => document.getElementById('winnow-host').shadowRoot.getElementById('addBtn').click());
+    await page.evaluate(() => document.getElementById('assay-host').shadowRoot.getElementById('addBtn').click());
     await clickWord(page, 'p2', 'selection');
     await clickWord(page, 'p2', 'selection');
   }, 'screenshot-1.png');
@@ -80,16 +80,16 @@ const mock = (caption) => `<!doctype html><html><head><meta charset="utf-8"><sty
   await shot('Annotate each fragment — before or after the quote. <span>Every conversation keeps its own list.</span>', async (page) => {
     await clickWord(page, 'p1', 'garbage');
     await clickWord(page, 'p1', 'garbage');
-    await page.evaluate(() => document.getElementById('winnow-host').shadowRoot.getElementById('addBtn').click());
+    await page.evaluate(() => document.getElementById('assay-host').shadowRoot.getElementById('addBtn').click());
     await clickWord(page, 'p1', 'Creators');
     await clickWord(page, 'p1', 'Creators');
-    await page.evaluate(() => document.getElementById('winnow-host').shadowRoot.getElementById('addBtn').click());
+    await page.evaluate(() => document.getElementById('assay-host').shadowRoot.getElementById('addBtn').click());
     await clickWord(page, 'p2', 'higher');
     await clickWord(page, 'p2', 'higher');
-    await page.evaluate(() => document.getElementById('winnow-host').shadowRoot.getElementById('addBtn').click());
+    await page.evaluate(() => document.getElementById('assay-host').shadowRoot.getElementById('addBtn').click());
     await page.evaluate(() => {
-      const s = document.getElementById('winnow-host').shadowRoot;
-      window.__winnow.toggle();
+      const s = document.getElementById('assay-host').shadowRoot;
+      window.__assay.toggle();
       const inputs = s.querySelectorAll('.frag input');
       const notes = ['economic consequence?', 'formalize this', 'expand — connect to writing workflow'];
       inputs.forEach((inp, i) => {
@@ -103,13 +103,13 @@ const mock = (caption) => `<!doctype html><html><head><meta charset="utf-8"><sty
   await shot('One tap sends your selection back as a deep-dive prompt. <span>No boilerplate. 100% local.</span>', async (page) => {
     await clickWord(page, 'p1', 'garbage');
     await clickWord(page, 'p1', 'garbage');
-    await page.evaluate(() => document.getElementById('winnow-host').shadowRoot.getElementById('addBtn').click());
+    await page.evaluate(() => document.getElementById('assay-host').shadowRoot.getElementById('addBtn').click());
     await clickWord(page, 'p1', 'Creators');
     await clickWord(page, 'p1', 'Creators');
-    await page.evaluate(() => document.getElementById('winnow-host').shadowRoot.getElementById('addBtn').click());
+    await page.evaluate(() => document.getElementById('assay-host').shadowRoot.getElementById('addBtn').click());
     await page.evaluate(() => {
-      const s = document.getElementById('winnow-host').shadowRoot;
-      window.__winnow.toggle();
+      const s = document.getElementById('assay-host').shadowRoot;
+      window.__assay.toggle();
       const inputs = s.querySelectorAll('.frag input');
       ['economic consequence?', 'formalize this'].forEach((n, i) => {
         inputs[i].value = n; inputs[i].dispatchEvent(new Event('input'));
@@ -130,7 +130,7 @@ const mock = (caption) => `<!doctype html><html><head><meta charset="utf-8"><sty
     p b{color:#38bdf8;font-weight:600}
   </style>
   <div class="icon">${iconSvg}</div>
-  <div><h1>Winnow</h1><p><b>Tap. Collect. Deep dive.</b><br>Think with AI chats, not just read them.</p></div>`);
+  <div><h1>Assay</h1><p><b>Tap. Collect. Deep dive.</b><br>Think with AI chats, not just read them.</p></div>`);
   await tile.screenshot({ path: ROOT + '/store/promo-tile.png' });
   console.log('tile done');
   await browser.close();

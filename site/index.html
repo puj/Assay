@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Winnow — deep dive for AI chats</title>
+<title>Assay — deep dive for AI chats</title>
 <meta name="description" content="Tap the passages that matter while you read an AI answer, annotate them, and send them back as one deep-dive prompt. 100% local, open source. A Project Nothing experiment.">
 <link rel="icon" href="/icon.png">
 <link rel="apple-touch-icon" href="/icon-256.png">
-<meta property="og:title" content="Winnow — deep dive for AI chats">
-<meta property="og:description" content="Separate the grain from the chaff in your AI conversations. Tap, collect, annotate, deep dive. Nothing leaves your device.">
-<meta property="og:image" content="https://winnow.projectnothing.ai/og.png">
-<meta property="og:url" content="https://winnow.projectnothing.ai">
+<meta property="og:title" content="Assay — deep dive for AI chats">
+<meta property="og:description" content="Find what's worth keeping in your AI conversations. Tap, collect, annotate, deep dive. Nothing leaves your device.">
+<meta property="og:image" content="https://assay.projectnothing.ai/og.png">
+<meta property="og:url" content="https://assay.projectnothing.ai">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..600&display=swap">
 <style>
@@ -96,9 +96,9 @@
 <body>
 <div class="wrap">
   <p class="eyebrow"><a href="https://www.projectnothing.ai">A Project Nothing experiment</a></p>
-  <h1>Winnow</h1>
-  <p class="tagline">Separate the grain from the chaff in your AI conversations.</p>
-  <p class="lede">Reading an AI answer is easy; <b>thinking with it</b> is the hard part. Winnow lets you tap the passages that matter while you read, annotate them in a few words, and send them back as one deep-dive prompt. Your selection is the signal &mdash; no boilerplate, no copy-paste, no API key, and nothing ever leaves your device.</p>
+  <h1>Assay</h1>
+  <p class="tagline">Find what&rsquo;s worth keeping in your AI conversations.</p>
+  <p class="lede">Reading an AI answer is easy; <b>thinking with it</b> is the hard part. Assay lets you tap the passages that matter while you read, annotate them in a few words, and send them back as one deep-dive prompt. Your selection is the signal &mdash; no boilerplate, no copy-paste, no API key, and nothing ever leaves your device.</p>
 
   <div class="demo" aria-hidden="true">
     <p class="demo-text"><mark class="m-amber">The garbage collector becomes the allocator of life.</mark> Creators rarely bear the cost of rejection. <mark class="m-sky">The missing primitive is not annotation; it&rsquo;s accumulating several annotations before responding.</mark> Selection is probably the higher-bandwidth input modality.</p>
@@ -107,7 +107,7 @@
   </div>
 
   <div class="cta">
-    <a class="btn" id="primary" href="/install">Install Winnow</a>
+    <a class="btn" id="primary" href="/install">Install Assay</a>
     <a class="btn secondary" href="/install">Other ways to install</a>
   </div>
   <p class="detect" id="detect"></p>
@@ -126,7 +126,7 @@
   <section>
     <h2>See it work</h2>
     <video controls muted playsinline preload="metadata" poster="/og.png">
-      <source src="/winnow-demo.mp4" type="video/mp4">
+      <source src="/assay-demo.mp4" type="video/mp4">
     </video>
   </section>
 
@@ -134,7 +134,7 @@
     <h2>Private by design</h2>
     <div class="callout">
       <p>No account. No server. No analytics. No API keys &mdash; your existing ChatGPT or Claude subscription does all the inference.</p>
-      <p>Fragments live in your browser&rsquo;s local storage, per conversation. The only thing that ever leaves your device is the message you choose to send. The code is <a href="https://github.com/puj/Winnow">open source under MIT</a>, so you can check.</p>
+      <p>Fragments live in your browser&rsquo;s local storage, per conversation. The only thing that ever leaves your device is the message you choose to send. The code is <a href="https://github.com/puj/Assay">open source under MIT</a>, so you can check.</p>
     </div>
   </section>
 
@@ -142,14 +142,14 @@
     <h2>Three ways to run it</h2>
     <ul class="ways">
       <li><b>Extension</b> &mdash; Firefox (desktop and Android), Chrome, Edge. One tap from the store; updates itself.</li>
-      <li><b>Userscript</b> &mdash; Tampermonkey or Violentmonkey: <a href="/winnow.user.js">install from this link</a>; it auto-updates too.</li>
+      <li><b>Userscript</b> &mdash; Tampermonkey or Violentmonkey: <a href="/assay.user.js">install from this link</a>; it auto-updates too.</li>
       <li><b>Bookmarklet</b> &mdash; any browser, even iPhone Safari or Chrome on Android; tap it once per visit. <a href="/install">Set it up here.</a></li>
     </ul>
   </section>
 
   <footer>
     <a href="https://www.projectnothing.ai">Project Nothing</a>
-    <a href="https://github.com/puj/Winnow">GitHub</a>
+    <a href="https://github.com/puj/Assay">GitHub</a>
     <a href="/privacy">Privacy</a>
     <a href="/install">Install page</a>
     <span>Works with ChatGPT and Claude. Not affiliated with OpenAI or Anthropic.</span>
@@ -159,7 +159,7 @@
 <script>
   // Store URLs — fill in as each listing goes live. Empty = fall back to /install.
   var STORES = {
-    firefox: '',   // https://addons.mozilla.org/firefox/addon/winnow/
+    firefox: '',   // https://addons.mozilla.org/firefox/addon/assay/
     chrome: '',    // https://chromewebstore.google.com/detail/<id>
     edge: ''       // https://microsoftedge.microsoft.com/addons/detail/<id>
   };
@@ -185,10 +185,10 @@
   if (isFirefox) {
     set(STORES.firefox ? 'Add to Firefox' : 'Install for Firefox (early access)',
         STORES.firefox || '/install',
-        isAndroid ? 'Firefox on Android detected — this is the best home for Winnow on a phone.' : 'Firefox detected.');
+        isAndroid ? 'Firefox on Android detected — this is the best home for Assay on a phone.' : 'Firefox detected.');
   } else if (isIOS) {
     set('Set up on iPhone (bookmarklet)', '/install',
-        'iOS detected — Safari can’t run extensions here, so Winnow runs as a one-tap bookmarklet.');
+        'iOS detected — Safari can’t run extensions here, so Assay runs as a one-tap bookmarklet.');
   } else if (isAndroid && isChromium) {
     set('Get Firefox for Android', FIREFOX_ANDROID_PLAY,
         'Chrome on Android detected. Chrome can’t run extensions on Android; Firefox can — or use the bookmarklet.');
@@ -197,7 +197,7 @@
   } else if (isChromium) {
     set(STORES.chrome ? 'Add to Chrome' : 'Install for Chrome (early access)', STORES.chrome || '/install', 'Chrome detected.');
   } else {
-    set('Install Winnow', '/install', '');
+    set('Install Assay', '/install', '');
   }
 
   var links = [];

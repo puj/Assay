@@ -3,7 +3,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const core = fs.readFileSync(ROOT + '/src/winnow.core.js', 'utf8');
+const core = fs.readFileSync(ROOT + '/src/assay.core.js', 'utf8');
 const iconSvg = fs.readFileSync(ROOT + '/assets/icon.svg', 'utf8');
 const FF = process.env.FFMPEG;
 const OUT = ROOT + '/marketing';
@@ -33,7 +33,7 @@ const mock = (vertical) => `<!doctype html><html><head><meta charset="utf-8"><st
 <p id="p2">Current interfaces assume the primary human operation is prompting. For serious thinking it may increasingly be selection: this matters, this does not, connect these three, challenge that one.</p></div>
 </main>
 <div class="cwrap"><div contenteditable="true" id="composer"></div></div>
-<div class="end" id="end"><div class="icon">${iconSvg}</div><h1>Winnow</h1><p><b>Tap. Collect. Deep dive.</b></p><p>winnow.projectnothing.ai</p><p>100% local · open source · a Project Nothing experiment</p></div>
+<div class="end" id="end"><div class="icon">${iconSvg}</div><h1>Assay</h1><p><b>Tap. Collect. Deep dive.</b></p><p>assay.projectnothing.ai</p><p>100% local · open source · a Project Nothing experiment</p></div>
 </body></html>`;
 
 
@@ -67,10 +67,10 @@ async function record(vertical) {
   await page.evaluate(core);
   if (vertical) await page.evaluate(css => {
     const st = document.createElement('style'); st.textContent = css;
-    document.getElementById('winnow-host').shadowRoot.appendChild(st);
+    document.getElementById('assay-host').shadowRoot.appendChild(st);
   }, SHADOW_2X);
   const cap = (html) => page.evaluate(h => { document.getElementById('cap').innerHTML = h; }, html);
-  const btn = (id) => page.evaluate(id => document.getElementById('winnow-host').shadowRoot.getElementById(id).click(), id);
+  const btn = (id) => page.evaluate(id => document.getElementById('assay-host').shadowRoot.getElementById(id).click(), id);
   const clickWord = async (pid, word) => {
     const box = await page.evaluate(([pid, word]) => {
       const p = document.getElementById(pid);
@@ -130,7 +130,7 @@ async function og() {
     h1{color:#f9fafb;font-size:96px;margin:0 0 10px;letter-spacing:-.02em}
     p{color:#9ca3af;font-size:32px;margin:0;line-height:1.35;max-width:560px}
     p b{color:#38bdf8;font-weight:600}
-  </style><div class="icon">${iconSvg}</div><div><h1>Winnow</h1><p><b>Tap. Collect. Deep dive.</b><br>Think with AI chats, not just read them. Nothing leaves your device.</p></div>`);
+  </style><div class="icon">${iconSvg}</div><div><h1>Assay</h1><p><b>Tap. Collect. Deep dive.</b><br>Think with AI chats, not just read them. Nothing leaves your device.</p></div>`);
   await page.screenshot({ path: ROOT + '/site/og.png' });
   await browser.close();
 }
@@ -139,9 +139,9 @@ async function og() {
   fs.mkdirSync(OUT + '/raw', { recursive: true });
   const v = await record(true);
   const l = await record(false);
-  execSync(`"${FF}" -y -loglevel error -i "${v}" -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart "${OUT}/winnow-demo-vertical.mp4"`);
-  execSync(`"${FF}" -y -loglevel error -i "${l}" -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart "${OUT}/winnow-demo-landscape.mp4"`);
-  fs.copyFileSync(`${OUT}/winnow-demo-landscape.mp4`, ROOT + '/site/winnow-demo.mp4');
+  execSync(`"${FF}" -y -loglevel error -i "${v}" -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart "${OUT}/assay-demo-vertical.mp4"`);
+  execSync(`"${FF}" -y -loglevel error -i "${l}" -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart "${OUT}/assay-demo-landscape.mp4"`);
+  fs.copyFileSync(`${OUT}/assay-demo-landscape.mp4`, ROOT + '/site/assay-demo.mp4');
   fs.rmSync(OUT + '/raw', { recursive: true, force: true });
   await og();
   console.log('videos + og done');

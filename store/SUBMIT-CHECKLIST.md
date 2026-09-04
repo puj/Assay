@@ -5,33 +5,33 @@ payments, forms). Budget ~1 hour of clicking total.
 
 ## 0. One-time prep (both stores)
 
-- [ ] Deploy the site: Vercel → Add New Project → import **puj/Winnow** →
+- [ ] Deploy the site: Vercel → Add New Project → import **puj/Assay** →
       Root Directory `site`, Framework "Other", no build command → add
-      domain **winnow.projectnothing.ai** (CNAME to cname.vercel-dns.com
+      domain **assay.projectnothing.ai** (CNAME to cname.vercel-dns.com
       in the projectnothing.ai DNS). That publishes the landing page,
-      /install, /privacy and the auto-updating /winnow.user.js.
-- [ ] In the ProjectNothing repo, redirect `/winnow` →
-      https://winnow.projectnothing.ai (vercel.json `redirects`, or the
-      framework's redirect config) and add Winnow to the experiments index.
+      /install, /privacy and the auto-updating /assay.user.js.
+- [ ] In the ProjectNothing repo, redirect `/assay` →
+      https://assay.projectnothing.ai (vercel.json `redirects`, or the
+      framework's redirect config) and add Assay to the experiments index.
 - [ ] The contact email in `site/privacy.html` is currently
       hello@projectnothing.ai — swap for an alias if you don't want it public;
       stores also display your developer contact email.
 - [ ] Decide trader status (EU DSA question both stores ask). Monetizing →
       "trader", and your contact details become publicly visible on the
       listing.
-- [ ] `node build.js` for a fresh `winnow-extension.zip`.
+- [ ] `node build.js` for a fresh `assay-extension.zip`.
 
 ## 1. Firefox AMO — do this one first (free, covers desktop AND Android)
 
 - [ ] Create the account: https://addons.mozilla.org/developers/ (free).
-- [ ] Submit a new add-on → upload `winnow-extension.zip` → channel:
+- [ ] Submit a new add-on → upload `assay-extension.zip` → channel:
       **Listed**.
 - [ ] It's plain unminified JS, so no source-code archive is needed.
 - [ ] Paste name/summary/description/tags/categories from `LISTING.md`;
-      slug `winnow`; upload `extension/icons/icon128.png` and the
+      slug `assay`; upload `extension/icons/icon128.png` and the
       screenshots from `store/`.
 - [ ] License: MIT (matches the repo `LICENSE`). Privacy policy URL:
-      https://winnow.projectnothing.ai/privacy.
+      https://assay.projectnothing.ai/privacy.
 - [ ] Android compatibility is declared in the manifest
       (`gecko_android`) — confirm the "Firefox for Android" checkbox is on.
 - [ ] Expect automated approval in minutes–hours; occasional human
@@ -43,7 +43,7 @@ payments, forms). Budget ~1 hour of clicking total.
 
 - [ ] Register: https://chrome.google.com/webstore/devconsole — one-time
       $5, requires 2FA on the Google account.
-- [ ] New item → upload the same `winnow-extension.zip` (Chrome ignores
+- [ ] New item → upload the same `assay-extension.zip` (Chrome ignores
       the gecko keys; the console may show a harmless warning about them).
 - [ ] Store listing tab: title, short + full description from `LISTING.md`,
       category Productivity/Tools, icon, `store/screenshot-1..3.png`
@@ -73,13 +73,13 @@ Actions):
       `CWS_EXTENSION_ID` — Chrome Web Store API OAuth
       (developer.chrome.com/docs/webstore/using-api); the extension id
       comes from the dashboard after the first manual upload.
-- [ ] Each release needs a VERSION bump in `src/winnow.core.js` — stores
+- [ ] Each release needs a VERSION bump in `src/assay.core.js` — stores
       reject duplicate versions, so an unbumped merge fails the publish
       step harmlessly.
 - [ ] Users then auto-update: Chrome polls for extension updates every few
       hours, Firefox about daily, once the store approves the version.
 - [ ] When the repo goes public, add `@updateURL`/`@downloadURL` (raw
-      GitHub URL of winnow.user.js) to the userscript header so
+      GitHub URL of assay.user.js) to the userscript header so
       Tampermonkey installs auto-update too. Store installs need nothing —
       and switching a phone from the userscript to the store extension
       keeps all fragments, since they live in the site's localStorage, not
@@ -87,10 +87,10 @@ Actions):
 
 ## 5. Discoverability after listing
 
-- [ ] AMO + CWS listing URLs onto projectnothing.ai (a /winnow page that
+- [ ] AMO + CWS listing URLs onto projectnothing.ai (a /assay page that
       also hosts the privacy policy and links the install page for the
       userscript/bookmarklet paths).
-- [ ] Make github.com/puj/Winnow public once the first listing is up —
+- [ ] Make github.com/puj/Assay public once the first listing is up —
       "open source, local-only" is the trust signal this category lives on.
       LICENSE (MIT) and the README trademark notice are already in place.
 - [ ] Post the Project Nothing experiment write-up ("LLM Margin Notes")

@@ -1,4 +1,4 @@
-# Winnow — tap → collect → deep dive
+# Assay — tap → collect → deep dive
 
 *A Project Nothing experiment. Previously prototyped as DeepDive / DigBoard.*
 
@@ -19,7 +19,7 @@ the fragments and annotations into the site's composer — no wrapper prompt,
 the annotations carry the intent — for you to review and send.
 **⭳ .md / ⭳ .txt** download the entire current conversation — roles, text,
 code blocks — with the collected fragments appended, all locally, as
-`winnow-<chat title>-<timestamp>.md/.txt` (verbatim
+`assay-<chat title>-<timestamp>.md/.txt` (verbatim
 export captures what's loaded on the page, so scroll up first on very long
 threads). Note controls and the sheet track `visualViewport`, so the
 on-screen keyboard never covers them.
@@ -34,10 +34,10 @@ for a shared cross-conversation list later.
 
 | File | Purpose |
 | --- | --- |
-| `src/winnow.core.js` | The single source of truth — all logic and UI. |
-| `winnow.user.js` | Generated: userscript header + core (Tampermonkey/Violentmonkey). |
+| `src/assay.core.js` | The single source of truth — all logic and UI. |
+| `assay.user.js` | Generated: userscript header + core (Tampermonkey/Violentmonkey). |
 | `extension/` | Generated content script + `manifest.json` (MV3, Chrome + Firefox). |
-| `winnow-extension.zip` | Generated extension package for store submission / sideload. |
+| `assay-extension.zip` | Generated extension package for store submission / sideload. |
 | `install.template.html` | Mobile install page with a `__USERSCRIPT_SOURCE__` placeholder. |
 | `install.html` | Generated install page; it also derives the bookmarklet from the embedded source. |
 | `build.js` | Regenerates all of the above: `node build.js`. |
@@ -49,7 +49,7 @@ for a shared cross-conversation list later.
 2. **Bookmarklet** (any browser, incl. Chrome Android) — zero install, tap
    once per visit. Generated on the install page from the same source.
 3. **WebExtension** — for distribution. Load `extension/` unpacked in desktop
-   Chrome/Edge, or submit `winnow-extension.zip` to Firefox Add-ons (free
+   Chrome/Edge, or submit `assay-extension.zip` to Firefox Add-ons (free
    signing; then it installs normally on Firefox Android) and the
    Chrome/Edge stores.
 
@@ -107,18 +107,18 @@ deliberately — the reading/deep-dive loop needs to prove itself first.
 ## Website and hosting
 
 `site/` is the public site, deployed from this repo as its own Vercel
-project at **winnow.projectnothing.ai** (root directory `site`, no build
+project at **assay.projectnothing.ai** (root directory `site`, no build
 step). It serves the landing page with browser-aware store buttons, the
-install page, the privacy policy, and the raw `winnow.user.js` — which
+install page, the privacy policy, and the raw `assay.user.js` — which
 Tampermonkey can install straight from the URL and auto-update from, via the
 `@updateURL` in the script header. `node build.js` refreshes the generated
-files in `site/`. The umbrella site only needs `projectnothing.ai/winnow` to
+files in `site/`. The umbrella site only needs `projectnothing.ai/assay` to
 redirect here.
 
 ## License and trademark
 
-The code is released under the [MIT License](LICENSE). The **Winnow** name,
-the "sifted rows" mark, and the Project Nothing name are trademarks of
+The code is released under the [MIT License](LICENSE). The **Assay** name,
+the rows-and-dot mark, and the Project Nothing name are trademarks of
 Project Nothing and are *not* covered by that license: you are free to fork,
 modify and redistribute the code, but a fork distributed to the public must
 use its own name and icon so users can tell it apart from the official
