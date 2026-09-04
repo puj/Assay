@@ -1,4 +1,4 @@
-# Auto-publish DigBoard to the extension stores on merge to master.
+# Auto-publish Winnow to the extension stores on merge to master.
 #
 # INERT UNTIL CONFIGURED: each store's FIRST listing must be created by hand
 # (see store/SUBMIT-CHECKLIST.md); after that, add these repo secrets and
@@ -9,7 +9,7 @@
 #   CWS_CLIENT_ID / CWS_CLIENT_SECRET / CWS_REFRESH_TOKEN / CWS_EXTENSION_ID
 #     Chrome Web Store API OAuth (guide: developer.chrome.com/docs/webstore/using-api)
 #
-# Remember to bump VERSION in src/deepdive.core.js — both stores reject a
+# Remember to bump VERSION in src/winnow.core.js — both stores reject a
 # re-upload of an already-published version, which is what makes this safe
 # to run on every merge.
 
@@ -39,10 +39,10 @@ jobs:
         run: echo "version=$(node -p "require('./extension/manifest.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: digboard-${{ steps.meta.outputs.version }}
+          name: winnow-${{ steps.meta.outputs.version }}
           path: |
-            digboard-extension.zip
-            deepdive.user.js
+            winnow-extension.zip
+            winnow.user.js
             install.html
 
   publish-firefox:
@@ -90,5 +90,5 @@ jobs:
             exit 0
           fi
           npx chrome-webstore-upload-cli@3 upload \
-            --source digboard-extension.zip \
+            --source winnow-extension.zip \
             --auto-publish

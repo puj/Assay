@@ -1,4 +1,4 @@
-# DigBoard — store listing copy
+# Winnow — store listing copy
 
 One source for both stores. Titles avoid third-party trademarks (store
 policy); "works with ChatGPT and Claude" appears only in descriptions,
@@ -6,13 +6,13 @@ where nominative compatibility statements are accepted.
 
 ## Names
 
-- **Product name:** DigBoard
-- **Chrome Web Store title (45-char guideline):** `DigBoard: Deep Dive for AI Chats`
-- **Firefox AMO name:** `DigBoard: Deep Dive for AI Chats`
-- **AMO URL slug:** `digboard`
+- **Product name:** Winnow
+- **Chrome Web Store title (45-char guideline):** `Winnow: Deep Dive for AI Chats`
+- **Firefox AMO name:** `Winnow: Deep Dive for AI Chats`
+- **AMO URL slug:** `winnow`
 - Riskier high-keyword variant (some reviewers allow "for X" nominative use,
   some reject it — only try if the safe title underperforms):
-  `DigBoard: Highlight & Deep Dive for ChatGPT`
+  `Winnow: Highlight & Deep Dive for ChatGPT`
 
 ## Short description
 
@@ -25,7 +25,7 @@ Chrome (132-char limit) / AMO summary:
 
 > **Reading an AI answer is easy. Thinking with it is the hard part.**
 >
-> DigBoard turns AI conversations into a selectable thinking surface. While
+> Winnow turns AI conversations into a selectable thinking surface. While
 > you read, tap any word to highlight it — tap again to widen to the
 > sentence or the whole paragraph, or tap nearby words to grow the
 > selection. Collect several passages, add a short annotation to each, and
@@ -50,7 +50,7 @@ Chrome (132-char limit) / AMO summary:
 >
 > Works with ChatGPT (chatgpt.com) and Claude (claude.ai). On Android, use
 > Firefox to run it on mobile. A Project Nothing experiment.
-> DigBoard is not affiliated with OpenAI or Anthropic.
+> Winnow is not affiliated with OpenAI or Anthropic.
 
 ## Keywords (AMO tags / worked into descriptions)
 
@@ -76,7 +76,7 @@ reading tool, note taking
   localStorage on the user's device. Select "Does not collect or use user
   data"; certify the disclosures.
 - **Privacy policy URL:** host `store/privacy.html` (e.g.
-  https://www.projectnothing.ai/digboard/privacy).
+  https://www.projectnothing.ai/winnow/privacy).
 
 ## Assets checklist
 

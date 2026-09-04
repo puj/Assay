@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "DigBoard: Deep Dive for AI Chats",
-  "version": "0.6.3",
+  "name": "Winnow: Deep Dive for AI Chats",
+  "version": "0.7.0",
   "description": "Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive prompt. 100% local, no account.",
   "homepage_url": "https://www.projectnothing.ai",
   "icons": {
@@ -18,14 +18,14 @@
         "https://claude.ai/*"
       ],
       "js": [
-        "deepdive.js"
+        "winnow.js"
       ],
       "run_at": "document_idle"
     }
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "digboard@projectnothing.ai",
+      "id": "winnow@projectnothing.ai",
       "strict_min_version": "121.0"
     },
     "gecko_android": {

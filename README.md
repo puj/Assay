@@ -1,4 +1,6 @@
-# DigBoard — tap → collect → deep dive (formerly DeepDive)
+# Winnow — tap → collect → deep dive
+
+*A Project Nothing experiment. Previously prototyped as DeepDive / DigBoard.*
 
 Editorial selection over AI conversations, on your phone. While reading a
 ChatGPT (or Claude) response in a mobile browser, **tap a word** — it
@@ -17,7 +19,7 @@ the fragments and annotations into the site's composer — no wrapper prompt,
 the annotations carry the intent — for you to review and send.
 **⭳ .md / ⭳ .txt** download the entire current conversation — roles, text,
 code blocks — with the collected fragments appended, all locally, as
-`digboard-<chat title>-<timestamp>.md/.txt` (verbatim
+`winnow-<chat title>-<timestamp>.md/.txt` (verbatim
 export captures what's loaded on the page, so scroll up first on very long
 threads). Note controls and the sheet track `visualViewport`, so the
 on-screen keyboard never covers them.
@@ -32,10 +34,10 @@ for a shared cross-conversation list later.
 
 | File | Purpose |
 | --- | --- |
-| `src/deepdive.core.js` | The single source of truth — all logic and UI. |
-| `deepdive.user.js` | Generated: userscript header + core (Tampermonkey/Violentmonkey). |
+| `src/winnow.core.js` | The single source of truth — all logic and UI. |
+| `winnow.user.js` | Generated: userscript header + core (Tampermonkey/Violentmonkey). |
 | `extension/` | Generated content script + `manifest.json` (MV3, Chrome + Firefox). |
-| `digboard-extension.zip` | Generated extension package for store submission / sideload. |
+| `winnow-extension.zip` | Generated extension package for store submission / sideload. |
 | `install.template.html` | Mobile install page with a `__USERSCRIPT_SOURCE__` placeholder. |
 | `install.html` | Generated install page; it also derives the bookmarklet from the embedded source. |
 | `build.js` | Regenerates all of the above: `node build.js`. |
@@ -47,7 +49,7 @@ for a shared cross-conversation list later.
 2. **Bookmarklet** (any browser, incl. Chrome Android) — zero install, tap
    once per visit. Generated on the install page from the same source.
 3. **WebExtension** — for distribution. Load `extension/` unpacked in desktop
-   Chrome/Edge, or submit `digboard-extension.zip` to Firefox Add-ons (free
+   Chrome/Edge, or submit `winnow-extension.zip` to Firefox Add-ons (free
    signing; then it installs normally on Firefox Android) and the
    Chrome/Edge stores.
 
@@ -90,7 +92,7 @@ verb palette per fragment instead of just add/annotate:
 
 > tap → **keep** · **annotate** · **slide confidence** · **reword** · …
 
-The action bar is the natural extension point: today it's Add / Note / ¶ /
+The action bar is the natural extension point: today it's Add / Note /
 cancel; the book-editing mode swaps in a different verb set operating on the
 same tap-to-sentence engine, and the collected items gain typed operations
 (`{verb, confidence, replacement, …}`) rather than a single note. Parked
@@ -98,6 +100,6 @@ deliberately — the reading/deep-dive loop needs to prove itself first.
 
 ## Other roadmap sketches
 
-- Per-conversation grouping and a fragment archive across sessions.
+- A shared cross-conversation fragment list, and an archive across sessions.
 - Editable payload templates.
 - Claude-specific selector hardening; store submission for one-tap installs.
