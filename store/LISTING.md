@@ -75,8 +75,8 @@ reading tool, note taking
 - **Remote code:** None. **Data collection:** None — all state is in
   localStorage on the user's device. Select "Does not collect or use user
   data"; certify the disclosures.
-- **Privacy policy URL:** host `store/privacy.html` (e.g.
-  https://www.projectnothing.ai/winnow/privacy).
+- **Privacy policy URL:** https://winnow.projectnothing.ai/privacy (served from `site/privacy.html`).
+- **License (AMO field):** MIT. Homepage: https://winnow.projectnothing.ai. Support: https://github.com/puj/Winnow/issues.
 
 ## Assets checklist
 
@@ -86,4 +86,4 @@ reading tool, note taking
 | Icons 16/32/48 | `extension/icons/` | manifest |
 | Screenshots ×3 | `store/screenshot-1..3.png` | CWS: 1280×800, ≥1 required; AMO: optional but listed |
 | Small promo tile | `store/promo-tile.png` | CWS: 440×280, required field |
-| Privacy policy | `store/privacy.html` | both, needs public URL |
+| Privacy policy | `site/privacy.html` → winnow.projectnothing.ai/privacy | both |

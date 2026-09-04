@@ -28,6 +28,11 @@ const header = [
   '// @version      ' + version,
   '// @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.',
   '// @author       puj',
+  '// @homepageURL  https://winnow.projectnothing.ai',
+  '// @supportURL   https://github.com/puj/Winnow/issues',
+  '// @updateURL    https://winnow.projectnothing.ai/winnow.user.js',
+  '// @downloadURL  https://winnow.projectnothing.ai/winnow.user.js',
+  '// @icon         https://winnow.projectnothing.ai/icon.png',
   '// @match        https://chatgpt.com/*',
   '// @match        https://chat.openai.com/*',
   '// @match        https://claude.ai/*',
@@ -57,11 +62,20 @@ if (!tpl.includes('__USERSCRIPT_SOURCE__')) {
 const out = tpl.replace('__USERSCRIPT_SOURCE__', () => '\n' + userscript);
 fs.writeFileSync(path.join(dir, 'install.html'), out);
 
+// The public site ships the install page, the raw userscript (Tampermonkey
+// installs and auto-updates from its URL), and the icon.
+const site = path.join(dir, 'site');
+fs.mkdirSync(site, { recursive: true });
+fs.writeFileSync(path.join(site, 'install.html'), out);
+fs.writeFileSync(path.join(site, 'winnow.user.js'), userscript);
+fs.copyFileSync(path.join(dir, 'extension', 'icons', 'icon128.png'), path.join(site, 'icon.png'));
+fs.copyFileSync(path.join(dir, 'extension', 'icons', 'icon256.png'), path.join(site, 'icon-256.png'));
+
 let zipNote = 'zip tool not found — skipped extension zip';
 try {
   execSync('cd "' + path.join(dir, 'extension') + '" && rm -f ../winnow-extension.zip && zip -q -X -r ../winnow-extension.zip manifest.json winnow.js icons', { stdio: 'pipe' });
   zipNote = 'winnow-extension.zip';
 } catch (e) {}
 
-console.log('v' + version + ': winnow.user.js, extension/winnow.js, install.html (' +
+console.log('v' + version + ': winnow.user.js, extension/winnow.js, site/, install.html (' +
   (out.length / 1024).toFixed(1) + ' KB), ' + zipNote);

@@ -1,0 +1,15 @@
+{
+  "name": "winnow",
+  "version": "0.7.0",
+  "private": true,
+  "description": "Tap, collect, annotate and deep-dive passages in AI chats. A Project Nothing experiment.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.js",
+    "assets": "node scripts/render_assets.js",
+    "video": "node scripts/video.js"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.50.0"
+  }
+}
