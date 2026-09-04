@@ -214,7 +214,7 @@
       <p><span class="k">Tap a word</span> in any reply &mdash; it highlights, with a small bar: <span class="k">&#xFF0B; Add</span> collects it, <span class="k">&#x270E; Note</span> annotates it now (choose whether the note sits <i>before</i> or <i>after</i> the quote). <span class="k">Tap the highlight</span> to widen it &mdash; word &rarr; sentence &rarr; paragraph &rarr; back to the word. <span class="k">Tap other words in the same reply</span> to grow the selection toward them, word by word &mdash; <b>across paragraphs too</b>. To start over: <span class="k">&#x2715;</span> on the bar, or tap a different reply or empty space. Long-press selection still works for arbitrary spans.</p>
       <p>Each fragment gets the next of six rotating highlight colors, and collected marks stay tinted on the page while you keep reading. Tap the <span class="k">Deep dive</span> pill to flip between the fragment view and the conversation &mdash; the page stays scrollable behind it and taps keep collecting. In the list: annotate later, flip a note between before/after, delete strays, expand truncated text with a tap. Each conversation keeps its own list (fragments collected in a brand-new chat follow it once it gets its address); a shared cross-conversation list may come later.</p>
       <p><span class="k">&#x2197; To composer</span> writes just your fragments and annotations into the composer &mdash; no added prompt text; your annotations carry the intent. Review, then send. If injection is ever blocked, it lands on your clipboard instead.</p>
-      <p><span class="k">&#x2B07; .md</span> / <span class="k">&#x2B07; .txt</span> download the <b>entire current conversation</b> to your phone, with your collected fragments and notes appended &mdash; nothing is sent or cleared. On a very long thread, scroll to the top first: the sites load older messages lazily, and the export captures what&rsquo;s on the page.</p>
+      <p><span class="k">&#x2B07; .md</span> / <span class="k">&#x2B07; .txt</span> download the <b>entire current conversation</b> to your phone &mdash; named <code>digboard-&lt;chat title&gt;-&lt;timestamp&gt;</code> &mdash; with your collected fragments and notes appended &mdash; nothing is sent or cleared. On a very long thread, scroll to the top first: the sites load older messages lazily, and the export captures what&rsquo;s on the page.</p>
       <p><span class="k">Clear</span> and sent batches are restorable from the empty sheet, so nothing is lost by accident.</p>
     </div>
   </section>
@@ -226,7 +226,7 @@
 // ==UserScript==
 // @name         DigBoard — deep dive for AI chats
 // @namespace    https://github.com/puj/Diveboard
-// @version      0.6.2
+// @version      0.6.3
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @match        https://chatgpt.com/*
@@ -242,7 +242,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.6.2';
+  var VERSION = '0.6.3';
   var MAP_KEY = 'deepdive.byConvo.v1';
   var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -1271,7 +1271,23 @@
 
   function convoTitle() {
     var t = (document.title || '').replace(/\s*[—|–-]\s*(ChatGPT|Claude).*$/i, '').trim();
+    // A brand-new chat is titled just "ChatGPT"/"Claude" — not a real title.
+    if (/^(chatgpt|claude|new chat)$/i.test(t)) t = '';
     return t || 'Conversation';
+  }
+
+  // Filenames read brand → chat title → timestamp, so exports group by app,
+  // say what they are, and sort chronologically within one conversation.
+  function titleSlug() {
+    var t = convoTitle();
+    if (t === 'Conversation') return '';
+    return t
+      .replace(/[\u0000-\u001F\/\\?%*:|"'<>.,;#&$!`]+/g, ' ')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 60)
+      .replace(/-+$/, '');
   }
 
   function fragmentAppendixMd(lines) {
@@ -1334,7 +1350,9 @@
     var turns = getConversation();
     var content = ext === 'md' ? buildConversationMarkdown(turns) : buildConversationText(turns);
     if (!content) { toast('Nothing to export yet'); return; }
-    var ok = download('digboard-' + fileStamp() + '.' + ext, content, mime);
+    var slug = titleSlug();
+    var name = 'digboard-' + (slug ? slug + '-' : '') + fileStamp() + '.' + ext;
+    var ok = download(name, content, mime);
     if (!ok) { toast('Download blocked by the browser'); return; }
     toast(turns
       ? 'Saved conversation' + (fragments.length ? ' + fragments' : '') + ' (.' + ext + ')'

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DigBoard — deep dive for AI chats
 // @namespace    https://github.com/puj/Diveboard
-// @version      0.6.2
+// @version      0.6.3
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @match        https://chatgpt.com/*
@@ -17,7 +17,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__deepdive) { try { window.__deepdive.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.6.2';
+  var VERSION = '0.6.3';
   var MAP_KEY = 'deepdive.byConvo.v1';
   var BACKUP_MAP_KEY = 'deepdive.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -1046,7 +1046,23 @@
 
   function convoTitle() {
     var t = (document.title || '').replace(/\s*[—|–-]\s*(ChatGPT|Claude).*$/i, '').trim();
+    // A brand-new chat is titled just "ChatGPT"/"Claude" — not a real title.
+    if (/^(chatgpt|claude|new chat)$/i.test(t)) t = '';
     return t || 'Conversation';
+  }
+
+  // Filenames read brand → chat title → timestamp, so exports group by app,
+  // say what they are, and sort chronologically within one conversation.
+  function titleSlug() {
+    var t = convoTitle();
+    if (t === 'Conversation') return '';
+    return t
+      .replace(/[\u0000-\u001F\/\\?%*:|"'<>.,;#&$!`]+/g, ' ')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 60)
+      .replace(/-+$/, '');
   }
 
   function fragmentAppendixMd(lines) {
@@ -1109,7 +1125,9 @@
     var turns = getConversation();
     var content = ext === 'md' ? buildConversationMarkdown(turns) : buildConversationText(turns);
     if (!content) { toast('Nothing to export yet'); return; }
-    var ok = download('digboard-' + fileStamp() + '.' + ext, content, mime);
+    var slug = titleSlug();
+    var name = 'digboard-' + (slug ? slug + '-' : '') + fileStamp() + '.' + ext;
+    var ok = download(name, content, mime);
     if (!ok) { toast('Download blocked by the browser'); return; }
     toast(turns
       ? 'Saved conversation' + (fragments.length ? ' + fragments' : '') + ' (.' + ext + ')'
