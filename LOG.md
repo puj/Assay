@@ -22,7 +22,12 @@ Append only. Never edit an entry after the fact.
   data-collection declaration added (`required: ["none"]`) after the first AMO
   submission attempt rejected the manifest.
 - **2026-09-07** — the verb palette, unparked. Keep · Push · Fix · Challenge ·
-  Cut sit under Add/Note; one tap collects a passage classified, and the verb
+  Cut sat under Add/Note; one tap collects a passage classified, and the verb
   renders as a plain-English clause in the prompt. Prompted by writing on a
   gym bike: typing is expensive there, judgment is not. A "next pass" button
   was considered and dropped — it is To composer under another name.
+- **2026-09-07** — first day of real use on the bike: "Fix" was too vague, the
+  hand kept reaching for two different things, so it split into Tweak and
+  Reword. And the action bar moved above the selection: it used to sit on
+  the very lines you tap next to grow a selection downward, which made
+  bottom-to-top selection a learned workaround rather than an ergonomic one.

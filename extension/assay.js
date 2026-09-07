@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.9.0';
+  var VERSION = '0.9.1';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -27,7 +27,8 @@
   var VERBS = [
     { id: 'keep', label: 'Keep', clause: 'keep as is' },
     { id: 'push', label: 'Push', clause: 'push this further' },
-    { id: 'fix', label: 'Fix', clause: 'right idea, reword it' },
+    { id: 'tweak', label: 'Tweak', clause: 'tweak this, keep the idea' },
+    { id: 'reword', label: 'Reword', clause: 'reword this' },
     { id: 'challenge', label: 'Challenge', clause: 'challenge this' },
     { id: 'cut', label: 'Cut', clause: 'drop this' }
   ];
@@ -51,6 +52,7 @@
     list.forEach(function (f, i) {
       if (!f.notePos) f.notePos = 'post';
       if (typeof f.verb !== 'string') f.verb = '';
+      if (f.verb === 'fix') f.verb = 'reword'; // 0.9.0's Fix split into Tweak / Reword
       if (typeof f.colorIdx !== 'number') f.colorIdx = i % PALETTE.length;
     });
     return list;
@@ -120,8 +122,8 @@
     '.bar button:active{background:#374151}' +
     '.bar .x{color:#9ca3af}' +
     '.bar .row{display:flex;gap:2px;align-items:center}' +
-    '.verbs{display:flex;gap:4px;flex-wrap:wrap}' +
-    '.vb{background:#1f2937;color:#cbd5e1;font-size:13px;font-weight:600;border-radius:999px;padding:6px 11px;touch-action:manipulation;white-space:nowrap}' +
+    '.verbs{display:flex;gap:3px;flex-wrap:wrap}' +
+    '.vb{background:#1f2937;color:#cbd5e1;font-size:12px;font-weight:600;border-radius:999px;padding:6px 8px;touch-action:manipulation;white-space:nowrap}' +
     '.vb:active,.vb.on{background:#38bdf8;color:#0c1220}' +
     '.notebox{position:fixed;display:none;flex-direction:column;gap:8px;background:#111827;color:#f9fafb;' +
       'padding:10px 12px;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.4);z-index:26;' +
@@ -624,13 +626,18 @@
     paintRects(rects, 'rgba(' + PALETTE[nextColorIdx()].rgb + ',.34)');
     var last = rects[rects.length - 1];
     bar.classList.add('show');
-    var vw = window.innerWidth, vh = window.innerHeight;
+    var vw = window.innerWidth, vh = window.innerHeight, ins = viewportInsets();
     var bw = bar.offsetWidth || 180, bh = bar.offsetHeight || 40;
     var left = Math.max(8, Math.min(last.left, vw - bw - 8));
-    var top = last.bottom + 10;
-    if (top + bh > vh - 8) top = rects[0].top - bh - 10;
+    // The bar sits above the selection: reading runs downward, so the lines
+    // you are about to tap to grow the selection must stay uncovered, and
+    // anchoring to the first line keeps the bar still while you grow it.
+    // Below is the fallback when the selection starts near the top edge.
+    var top = rects[0].top - bh - 10;
+    if (top < ins.top + 8) top = last.bottom + 10;
+    if (top + bh > vh - ins.bottom - 8) top = Math.max(ins.top + 8, rects[0].top - bh - 10);
     bar.style.left = left + 'px';
-    bar.style.top = Math.max(8, top) + 'px';
+    bar.style.top = top + 'px';
   }
 
   function placeNotebox() {
