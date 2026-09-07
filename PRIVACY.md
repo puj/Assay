@@ -25,7 +25,7 @@ It reads nothing on any other website, and it does not run anywhere else.
 ## What Assay writes
 
 - **The fragments you collect and the notes you write**, into your browser's
-  local storage on the chat site itself.
+  local storage on the site itself.
 - **The composed prompt**, into that site's own message box, when you press
   ↗ To composer. Nothing is ever sent for you — you review it and press send.
 - **A copy of that text to your clipboard**, when you press ⧉ Copy notes on a
@@ -43,7 +43,7 @@ tray. Clear keeps one restorable copy of the batch — so an accidental clear
 is undoable — until the next clear or send replaces it.
 
 **Uninstalling the extension does not by itself erase this data**, because it
-belongs to the chat site's storage rather than to the extension. To erase it
+belongs to the site's storage rather than to the extension. To erase it
 completely, clear site data for chatgpt.com, claude.ai and github.com in your browser
 settings.
 
