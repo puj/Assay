@@ -60,8 +60,9 @@ non-affiliation line.
 > on your device. The only thing that ever leaves it is the message you choose
 > to send. Open source under MIT: github.com/puj/Assay
 >
-> Works with ChatGPT (chatgpt.com) and Claude (claude.ai). On Android, run it
-> in Firefox. A Project Nothing experiment — this is an experiment, and it
+> Works with ChatGPT (chatgpt.com), Claude (claude.ai) and GitHub, where the
+> same taps collect from a file and ⧉ Copy notes takes the place of the
+> message box. On Android, run it in Firefox. A Project Nothing experiment — this is an experiment, and it
 > might be gone next month.
 >
 > Assay is not affiliated with OpenAI or Anthropic.
@@ -82,11 +83,11 @@ ChatGPT companion, Claude companion
 - **Single purpose:** Collect, annotate and recombine passages from AI chat
   conversations into a follow-up prompt, locally in the user's browser.
 - **Host permission justification (chatgpt.com, chat.openai.com,
-  claude.ai):** The content script must run on these chat pages to do the
-  only thing the extension does. It reads the passage the user taps or
+  claude.ai, github.com):** The content script must run on these pages to do
+  the only thing the extension does. It reads the passage the user taps or
   selects so it can highlight and collect it, and reads the visible
-  conversation at the moment the user presses the export button so it can
-  build the requested .md/.txt file. It writes the composed text into the
+  conversation — or, on github.com, the file being viewed — at the moment the
+  user presses the export button so it can build the requested .md/.txt file. It writes the composed text into the
   page's own message box on request. Nothing is transmitted anywhere: the
   extension makes no network requests, and all state is kept in the site's
   local storage on the user's device.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.9.5
+// @version      0.10.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -12,6 +12,7 @@
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @match        https://claude.ai/*
+// @match        https://github.com/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -22,11 +23,18 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.9.5';
+  var VERSION = '0.10.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
   var MIN_SEL_LEN = 4;
+  // GitHub is a reading surface with no composer: the same tap grammar over a
+  // file's rendered markdown or its code lines, and the collected set is
+  // copied out rather than written into a message box.
+  var IS_GITHUB = location.hostname === 'github.com';
+  var GH_CONTENT = '.markdown-body,.react-code-lines,table.js-file-line-container,.blob-wrapper';
+  var GH_CODE = '.react-code-lines,table.js-file-line-container,.blob-wrapper';
+  var READ_NOUN = IS_GITHUB ? 'file' : 'reply';
 
   // Rotating highlight colors: pending selection previews the color the next
   // fragment will get; collected marks stay on the page in the same hue.
@@ -63,6 +71,8 @@
   // the chat once the id appears). A shared cross-conversation list can layer
   // on top of this keying later.
   function convoKey() {
+    // Every file keeps its own list, the way every conversation does.
+    if (IS_GITHUB) return location.hostname + ':' + location.pathname.replace(/\/+$/, '');
     var m = location.pathname.match(/\/(?:c|chat)\/([A-Za-z0-9-]+)/);
     return location.hostname + ':' + (m ? m[1] : 'draft');
   }
@@ -245,7 +255,7 @@
         '<button class="btn minor" id="txtBtn">&#x2B07; .txt</button>' +
       '</div>' +
       '<div class="actions last">' +
-        '<button class="btn go" id="goBtn">&#x2197; To composer</button>' +
+        '<button class="btn go" id="goBtn"></button>' +
       '</div>' +
     '</div>' +
     '<div class="toast" id="toast"></div>';
@@ -292,6 +302,8 @@
 
   var $ = function (id) { return root.getElementById(id); };
   var chip = $('chip'), pill = $('pill'), sheet = $('sheet');
+  // Nothing to write into on a reading site, so the set is copied out instead.
+  $('goBtn').innerHTML = IS_GITHUB ? '&#x29C9; Copy notes' : '&#x2197; To composer';
   var toastEl = $('toast'), listEl = $('list'), manualEl = $('manual');
   var hlLayer = $('hlLayer'), bar = $('bar'), notebox = $('notebox');
 
@@ -625,15 +637,19 @@
   }
 
   function pendingText() {
+    // Blocks are paragraphs in prose and lines in a code view: paragraphs read
+    // apart, lines read together, and a line's indentation is part of it.
+    var code = IS_GITHUB && pending.container.matches && pending.container.matches(GH_CODE);
     var parts = [];
     pending.blocks.forEach(function (b) {
       var s = Math.max(pending.start, b.start), e = Math.min(pending.end, b.end);
       if (e > s) {
-        var t = b.text.slice(s - b.start, e - b.start).trim();
+        var t = b.text.slice(s - b.start, e - b.start);
+        t = code ? t.replace(/\s+$/, '') : t.trim();
         if (t) parts.push(t);
       }
     });
-    return parts.join('\n\n');
+    return parts.join(code ? '\n' : '\n\n');
   }
 
   function clearPending() {
@@ -726,6 +742,9 @@
       // Short lines count there: a card is written in them.
       return isComposerEl(ed) ? null : block;
     }
+    // On GitHub only the file itself is readable text; a line of code is
+    // often short, so no length gate there.
+    if (IS_GITHUB) return block.closest(GH_CONTENT) ? block : null;
     if (block.closest('[data-message-author-role="assistant"]')) return block;
     if (block.closest('.font-claude-message')) return block;
     if ((block.textContent || '').trim().length < 30) return null;
@@ -769,6 +788,8 @@
     // than letting a selection run out into the reply around it.
     var ed = pageEditable(block, RICH_SEL);
     if (ed) return ed;
+    // A file (or one rendered comment) is the document a selection grows in.
+    if (IS_GITHUB) return block.closest(GH_CONTENT) || block;
     return block.closest('[data-message-author-role],[data-testid="user-message"],.font-claude-message') || block;
   }
 
@@ -968,6 +989,10 @@
   // storage. Find each orphaned fragment's text in the conversation again and
   // re-attach its mark, so a reload looks like nothing happened.
   function messageContainers() {
+    if (IS_GITHUB) {
+      var gh = document.querySelectorAll(GH_CONTENT);
+      return Array.prototype.slice.call(gh).filter(function (el) { return !host.contains(el); });
+    }
     var nodes = document.querySelectorAll(TURN_SEL);
     var list = nodes.length ? Array.prototype.slice.call(nodes) : [];
     if (!list.length) {
@@ -1029,7 +1054,7 @@
 
     var added = 0;
     missing.forEach(function (f) {
-      var parts = (f.text || '').split('\n\n').map(function (t) { return t.trim(); })
+      var parts = (f.text || '').split(/\n+/).map(function (t) { return t.trim(); })
         .filter(function (t) { return t.length; });
       if (!parts.length) return;
       var span = 0;
@@ -1205,7 +1230,8 @@
     if (!fragments.length) {
       var empty = document.createElement('div');
       empty.className = 'empty';
-      empty.textContent = 'Nothing collected in this conversation yet. Tap a word in a reply — tap the highlight to widen it (word → sentence → paragraph), tap nearby words to grow it — or long-press to select any span.';
+      empty.textContent = 'Nothing collected here yet. Tap a word in the ' + READ_NOUN +
+        ' — tap the highlight to widen it (word → sentence → paragraph), tap nearby words to grow it — or long-press to select any span.';
       var backup = loadBackup();
       if (backup && backup.length) {
         empty.appendChild(document.createElement('br'));
@@ -1333,6 +1359,13 @@
     if (note && f.notePos === 'pre') parts.push(note);
     return parts.join(' — ');
   }
+  // Prose is trimmed. A multi-line fragment keeps its indentation: in a code
+  // view that is part of what was selected.
+  function fragText(f) {
+    var t = f.text || '';
+    return t.indexOf('\n') === -1 ? t.trim() : t.replace(/^[ \t]*\n/, '').replace(/\s+$/, '');
+  }
+
   function buildPayload() {
     var many = fragments.length > 1;
     return fragments.map(function (f, i) {
@@ -1342,9 +1375,9 @@
       var lines = [];
       if (lead) {
         lines.push(head + lead + ':');
-        lines.push('“' + f.text.trim() + '”');
+        lines.push('“' + fragText(f) + '”');
       } else {
-        lines.push(head + '“' + f.text.trim() + '”');
+        lines.push(head + '“' + fragText(f) + '”');
       }
       if (note && f.notePos !== 'pre') lines.push('→ ' + note);
       return lines.join('\n');
@@ -1371,6 +1404,11 @@
   // dropped. Robust beats faithful here.
   function serializeBlocks(rootEl) {
     var out = [];
+    // A code view is lines of text, not prose: keep it verbatim in a fence.
+    if (rootEl.matches && rootEl.matches(GH_CODE)) {
+      var code = (rootEl.innerText || '').replace(/\s+$/, '');
+      return code ? ['```\n' + code + '\n```'] : [];
+    }
     function pushText(s) { if (s) out.push(s); }
     function walk(node) {
       if (node.nodeType !== 1 || node === host) return;
@@ -1406,6 +1444,12 @@
   }
 
   function getConversation() {
+    if (IS_GITHUB) {
+      var el = document.querySelector(GH_CONTENT);
+      if (!el) return null;
+      var path = decodeURIComponent(location.pathname.replace(/^\/|\/$/g, ''));
+      return [{ role: path || 'File', el: el }];
+    }
     var nodes = document.querySelectorAll('[data-message-author-role]');
     if (nodes.length) {
       return Array.prototype.map.call(nodes, function (n) {
@@ -1422,6 +1466,8 @@
   }
 
   function convoTitle() {
+    // "Assay/README.md at master · puj/Assay · GitHub" → "Assay/README.md at master"
+    if (IS_GITHUB) return ((document.title || '').split(' · ')[0] || '').trim() || 'File';
     var t = (document.title || '').replace(/\s*[—|–-]\s*(ChatGPT|Claude).*$/i, '').trim();
     // A brand-new chat is titled just "ChatGPT"/"Claude" — not a real title.
     if (/^(chatgpt|claude|new chat)$/i.test(t)) t = '';
@@ -1449,7 +1495,7 @@
       var lead = leadClause(f);
       lines.push('### ' + (i + 1), '');
       if (lead) lines.push('*' + lead + ':*', '');
-      f.text.trim().split('\n').forEach(function (l) { lines.push('> ' + l); });
+      fragText(f).split('\n').forEach(function (l) { lines.push('> ' + l); });
       if (note && f.notePos !== 'pre') lines.push('', '→ *' + note + '*');
       lines.push('');
     });
@@ -1616,9 +1662,25 @@
     toast(msg, 2600);
   }
 
+  function manualCopy(payload) {
+    manualEl.classList.add('show');
+    $('manualTxt').value = payload;
+    $('manualTxt').select();
+    toast('Copy the text below manually', 2600);
+  }
+
   $('goBtn').addEventListener('click', function () {
     if (!fragments.length) return;
     var payload = buildPayload();
+    if (IS_GITHUB) {
+      // Keep the fragments: what you paste them into is somewhere else, and a
+      // clipboard write can fail quietly on a phone.
+      copyText(payload).then(function (copied) {
+        if (copied) toast('Copied ' + fragments.length + ' fragment' + (fragments.length > 1 ? 's' : ''), 2400);
+        else manualCopy(payload);
+      });
+      return;
+    }
     if (insertIntoComposer(payload)) {
       finishBatch('In the composer — review and send');
       return;
@@ -1627,11 +1689,7 @@
       if (copied) {
         finishBatch('Copied — paste into the composer');
       } else {
-        // Last resort: show the payload for manual copy, keep fragments.
-        manualEl.classList.add('show');
-        $('manualTxt').value = payload;
-        $('manualTxt').select();
-        toast('Copy the text below manually', 2600);
+        manualCopy(payload); // last resort, keeping the fragments
       }
     });
   });

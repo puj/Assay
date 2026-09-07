@@ -50,3 +50,11 @@ Append only. Never edit an entry after the fact.
   as divs, handing the caret straight back on touch so the keyboard never
   opens, and ignoring the word the browser selects by itself on a repeat tap
   in an editable, which was hijacking the scope cycle.
+- **2026-09-07** — GitHub joins the sites Assay reads: a file's rendered
+  markdown, or its code view, where each line is a paragraph and keeps its
+  indentation, and the line-number column stays out of the selection. Every
+  file keeps its own list, ⭳ .md exports the file with the fragments
+  appended, and since a file has no message box the primary action becomes
+  ⧉ Copy notes — which keeps the fragments rather than spending them, because
+  what you paste them into is somewhere else and a clipboard write can fail
+  quietly on a phone.

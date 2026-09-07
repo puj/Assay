@@ -11,12 +11,14 @@ reaches us.
 
 ## What Assay reads
 
-Assay runs only on the AI chat pages it supports — chatgpt.com,
-chat.openai.com and claude.ai. On those pages it reads:
+Assay runs only on the pages it supports — chatgpt.com, chat.openai.com,
+claude.ai, and github.com, where it reads files the way it reads a reply.
+On those pages it reads:
 
 - **the passage you tap or select**, so it can highlight and collect it;
-- **the visible conversation**, but only in the moment you press ⭳ .md or
-  ⭳ .txt, so it can build the file you asked for.
+- **the visible conversation, or the file you are looking at**, but only in
+  the moment you press ⭳ .md or ⭳ .txt, so it can build the file you asked
+  for.
 
 It reads nothing on any other website, and it does not run anywhere else.
 
@@ -26,8 +28,8 @@ It reads nothing on any other website, and it does not run anywhere else.
   local storage on the chat site itself.
 - **The composed prompt**, into that site's own message box, when you press
   ↗ To composer. Nothing is ever sent for you — you review it and press send.
-- **A copy of that text to your clipboard**, only as a fallback if writing
-  into the message box fails.
+- **A copy of that text to your clipboard**, when you press ⧉ Copy notes on a
+  site with no message box, or as a fallback if writing into the box fails.
 - **A .md or .txt file to your device**, when you ask for one.
 
 ## Where your data lives, and how to remove it
@@ -42,7 +44,7 @@ is undoable — until the next clear or send replaces it.
 
 **Uninstalling the extension does not by itself erase this data**, because it
 belongs to the chat site's storage rather than to the extension. To erase it
-completely, clear site data for chatgpt.com and claude.ai in your browser
+completely, clear site data for chatgpt.com, claude.ai and github.com in your browser
 settings.
 
 ## Third parties
