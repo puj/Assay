@@ -57,7 +57,7 @@ Assay gives that step an interface. While you read a reply on
 - **＋ Add** collects the passage; **✎ Note** annotates it, before or after the quote, now or later.
 - **A verb palette** for when typing is expensive: **Keep · Push · Tweak · Reword · Challenge · Cut**. One tap collects the passage classified; the verb becomes a plain-English clause in the prompt.
 - **Six rotating highlight colours** so you can see what you already took, and they survive a page refresh.
-- **A tray** holds everything you kept while the chat stays scrollable; a pill toggles it.
+- **A tray** holds everything you kept while the chat stays scrollable; a pill toggles it. Tap a collected passage on the page to change or remove it in place.
 - **↗ To composer** writes your fragments and notes into the site's own message box. Nothing is auto-sent; you review, then send.
 - **On GitHub**, where there is no message box, the same tray offers **⧉ Copy notes** instead: the set goes to the clipboard and stays in the tray.
 - **⭳ .md / ⭳ .txt** export the *whole* conversation as Markdown or plain text with your fragments appended, named after the chat: `assay-<chat title>-<date>-<time>.md`.
@@ -93,7 +93,8 @@ The interaction is a small grammar you can learn in a minute:
 
 The same taps work inside the cards ChatGPT renders in the conversation — a canvas draft, a message swapped into an edit box. On a phone the caret is handed straight back, so the keyboard never opens over what you are reading. The only text Assay leaves alone is the composer: that is your draft, not a passage.
 5. **＋ Add** collects it. **✎ Note** attaches a few words, placed *before* the quote (a lead-in) or *after* it (an instruction). Or tap a **verb** (Keep, Push, Tweak, Reword, Challenge, Cut) to collect it classified in one tap, no keyboard.
-6. Open the **tray** to annotate later, set or change a verb, or remove a fragment (its highlight goes with it).
+6. **Tap a passage you already collected** and the same bar opens on it, showing which fragment it is and how it is filed: change the verb, rewrite the note, or Remove it — its highlight goes with it.
+7. Open the **tray** to do the same to the whole set, in a list.
 7. **↗ To composer** writes the set into the message box. **⭳ .md** or **⭳ .txt** saves the whole conversation locally instead.
 
 What lands in the composer is plain text with no boilerplate, numbered only

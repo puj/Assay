@@ -49,6 +49,7 @@ non-affiliation line.
 >   in one tap, no keyboard; the verb becomes a plain-English clause
 > - Six rotating highlight colours, so you can see what you already took
 > - A tray holding everything you kept, while the chat stays scrollable
+> - Tap a passage you already kept to refile, re-annotate or remove it
 > - ↗ To composer writes your fragments and notes into the message box
 > - ⭳ Export the whole conversation as Markdown or plain text, your fragments
 >   and notes appended — a verbatim local record, named after the chat

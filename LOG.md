@@ -58,3 +58,9 @@ Append only. Never edit an entry after the fact.
   ⧉ Copy notes — which keeps the fragments rather than spending them, because
   what you paste them into is somewhere else and a clipboard write can fail
   quietly on a phone.
+- **2026-09-07** — a collected passage is now editable where it lies. Tapping
+  one used to start a fresh selection over it; it opens that fragment instead,
+  with the same bar wearing a second face — its number in its own colour, the
+  verb it is filed under shown as selected, Note prefilled with what it says,
+  and Remove. The list in the tray was the only place to change your mind
+  before, which meant leaving the page you were reading.

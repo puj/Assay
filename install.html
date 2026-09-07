@@ -213,7 +213,7 @@
     <h2>Using it</h2>
     <div class="usage">
       <p><span class="k">Tap a word</span> in any reply &mdash; it highlights, with a small bar: <span class="k">&#xFF0B; Add</span> collects it, <span class="k">&#x270E; Note</span> annotates it now (choose whether the note sits <i>before</i> or <i>after</i> the quote), and a verb row &mdash; <span class="k">Keep</span> <span class="k">Push</span> <span class="k">Tweak</span> <span class="k">Reword</span> <span class="k">Challenge</span> <span class="k">Cut</span> &mdash; collects it classified in one tap; the verb becomes a plain-English clause in the prompt. <span class="k">Tap the highlight</span> to widen it &mdash; word &rarr; sentence &rarr; paragraph &rarr; back to the word. <span class="k">Tap other words in the same reply</span> to grow the selection toward them, word by word &mdash; <b>into the next paragraph too</b>. A tap further off is a different passage, so it starts a new selection there rather than dragging the highlight across everything between. This works inside the cards ChatGPT renders in the chat too &mdash; a canvas draft, or a message swapped into an edit box &mdash; and on a phone the caret is handed back, so the keyboard stays down. To start over: <span class="k">&#x2715;</span> on the bar, or tap a different reply or empty space. Long-press selection still works for arbitrary spans.</p>
-      <p>Each fragment gets the next of six rotating highlight colors, and collected marks stay tinted on the page while you keep reading &mdash; they are found again after a page refresh, so a reload costs you nothing. Tap the <span class="k">Deep dive</span> pill to flip between the fragment view and the conversation &mdash; the page stays scrollable behind it and taps keep collecting. In the list: annotate later, set or change a verb, flip a note between before/after, delete strays, expand truncated text with a tap. Each conversation keeps its own list (fragments collected in a brand-new chat follow it once it gets its address); a shared cross-conversation list may come later.</p>
+      <p>Each fragment gets the next of six rotating highlight colors, and collected marks stay tinted on the page while you keep reading &mdash; they are found again after a page refresh, so a reload costs you nothing. Tap the <span class="k">Deep dive</span> pill to flip between the fragment view and the conversation &mdash; the page stays scrollable behind it and taps keep collecting. Tap a passage you already collected and the same bar opens on it &mdash; change its verb, rewrite its note, or Remove it. In the list: the same, plus flip a note between before/after, delete strays, expand truncated text with a tap. Each conversation keeps its own list (fragments collected in a brand-new chat follow it once it gets its address); a shared cross-conversation list may come later.</p>
       <p><span class="k">&#x2197; To composer</span> writes just your fragments and annotations into the composer &mdash; no added prompt text; your annotations carry the intent. Review, then send. If injection is ever blocked, it lands on your clipboard instead.</p>
       <p><span class="k">&#x2B07; .md</span> / <span class="k">&#x2B07; .txt</span> download the <b>entire current conversation</b> to your phone &mdash; named <code>assay-&lt;chat title&gt;-&lt;timestamp&gt;</code> &mdash; with your collected fragments and notes appended &mdash; nothing is sent or cleared. On a very long thread, scroll to the top first: the sites load older messages lazily, and the export captures what&rsquo;s on the page.</p>
       <p><span class="k">Clear</span> and sent batches are restorable from the empty sheet, so nothing is lost by accident.</p>
@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.10.0
+// @version      0.11.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -249,7 +249,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.10.0';
+  var VERSION = '0.11.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -375,6 +375,10 @@
     '.bar button{color:#f9fafb;font-size:14px;font-weight:600;padding:6px 10px;border-radius:999px;touch-action:manipulation;white-space:nowrap}' +
     '.bar button:active{background:#374151}' +
     '.bar .x{color:#9ca3af}' +
+    '.bar .drop{color:#fca5a5}' +
+    '.bar .tag{flex:none;border-radius:999px;min-width:20px;height:20px;margin:0 4px 0 2px;' +
+      'display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}' +
+    '.bar [hidden]{display:none}' +
     '.bar .row{display:flex;gap:2px;align-items:center}' +
     '.verbs{display:flex;gap:3px;flex-wrap:wrap}' +
     '.vb{background:#1f2937;color:#cbd5e1;font-size:12px;font-weight:600;border-radius:999px;padding:6px 8px;touch-action:manipulation;white-space:nowrap}' +
@@ -454,8 +458,10 @@
     '<div id="hlLayer"></div>' +
     '<div class="bar" id="bar">' +
       '<div class="row">' +
+        '<span class="tag" id="editTag" hidden></span>' +
         '<button id="addBtn">&#xFF0B; Add</button>' +
         '<button id="noteBtn">&#x270E; Note</button>' +
+        '<button class="drop" id="removeBtn" hidden>Remove</button>' +
         '<button class="x" id="cancelBtn">&#x2715;</button>' +
       '</div>' +
       '<div class="verbs" id="barVerbs"></div>' +
@@ -684,7 +690,10 @@
   // highlight (same block) to grow the selection in that direction, word by
   // word. Collected fragments keep a tinted mark on the page for the session.
   var pending = null; // {block, flat, words, sentences, start, end, scope, aw0, aw1}
-  var marks = [];     // session-only: {flat, block, start, end, colorIdx}
+  var marks = [];     // session-only: {fid, blocks, start, end, colorIdx}
+  // A tap on a passage already collected opens that fragment instead of
+  // starting a new selection: the same bar, showing what it is filed as.
+  var editing = null; // a fragment id
 
   function segmentSentences(text) {
     var out = [];
@@ -880,9 +889,35 @@
 
   function clearPending() {
     pending = null;
+    if (editing) { editing = null; paintBar(); }
     bar.classList.remove('show');
     notebox.classList.remove('show');
     redraw();
+  }
+
+  function leaveEdit() {
+    if (!editing) return;
+    editing = null;
+    paintBar();
+  }
+
+  function fragById(id) {
+    for (var i = 0; i < fragments.length; i++) if (fragments[i].id === id) return fragments[i];
+    return null;
+  }
+  function markById(id) {
+    for (var i = 0; i < marks.length; i++) if (marks[i].fid === id) return marks[i];
+    return null;
+  }
+  // The collected fragment under a tap, if there is one. Marks carry their own
+  // blocks, so a stale one simply reports no hit.
+  function markAtPoint(cp) {
+    for (var i = marks.length - 1; i >= 0; i--) {
+      var m = marks[i];
+      var off = absOffset(m.blocks, cp.node, cp.offset);
+      if (off >= 0 && off >= m.start && off <= m.end && fragById(m.fid)) return m;
+    }
+    return null;
   }
 
   function paintRects(rects, color) {
@@ -917,39 +952,51 @@
     return fallback * 1.6;
   }
 
-  function redraw() {
-    hlLayer.textContent = '';
-    // Session marks for already-collected fragments (drop dead ones quietly).
-    marks = marks.filter(function (m) {
-      var alive = m.blocks.some(function (b) { return b.el.isConnected; });
-      if (!alive) return false;
-      var rects = rectsForSpan(m.blocks, m.start, m.end);
-      if (!rects) return false;
-      paintRects(rects, 'rgba(' + PALETTE[m.colorIdx].rgb + ',.18)');
-      return true;
-    });
-    if (!pending) { bar.classList.remove('show'); return; }
-    var rects = rectsForSpan(pending.blocks, pending.start, pending.end);
-    if (!rects) { pending = null; bar.classList.remove('show'); return; }
-    paintRects(rects, 'rgba(' + PALETTE[nextColorIdx()].rgb + ',.34)');
+  // The bar keeps a full line of clearance from the passage on whichever side
+  // it sits, so the neighbouring line above and below both stay tappable and a
+  // selection can grow in either direction. It prefers above (anchored to the
+  // first line, so it holds still while you grow downward) and falls back to
+  // below when the passage starts near the top edge.
+  function placeBar(blocks, off, rects) {
     var last = rects[rects.length - 1];
     bar.classList.add('show');
     var vw = window.innerWidth, vh = window.innerHeight, ins = viewportInsets();
     var bw = bar.offsetWidth || 180, bh = bar.offsetHeight || 40;
     var left = Math.max(8, Math.min(last.left, vw - bw - 8));
-    // The bar keeps a full line of clearance from the selection on whichever
-    // side it sits, so the neighbouring line above and below both stay
-    // tappable and a selection can grow in either direction. It prefers
-    // above (anchored to the first line, so it holds still while you grow
-    // downward) and falls back to below when the selection starts near the
-    // top edge.
-    var lh = linePitch(pending.blocks, pending.start, last.height || rects[0].height || 16);
+    var lh = linePitch(blocks, off, last.height || rects[0].height || 16);
     var gap = Math.round(lh * 1.75) + 8;
     var top = rects[0].top - gap - bh;
     if (top < ins.top + 8) top = last.bottom + gap;
     if (top + bh > vh - ins.bottom - 8) top = Math.max(ins.top + 8, rects[0].top - gap - bh);
     bar.style.left = left + 'px';
     bar.style.top = top + 'px';
+  }
+
+  function redraw() {
+    hlLayer.textContent = '';
+    var editRects = null, editMark = null;
+    // Session marks for already-collected fragments (drop dead ones quietly).
+    marks = marks.filter(function (m) {
+      var alive = m.blocks.some(function (b) { return b.el.isConnected; });
+      if (!alive) return false;
+      var rects = rectsForSpan(m.blocks, m.start, m.end);
+      if (!rects) return false;
+      // The one being edited reads like a live selection, not a past one.
+      var on = m.fid === editing;
+      paintRects(rects, 'rgba(' + PALETTE[m.colorIdx].rgb + (on ? ',.34)' : ',.18)'));
+      if (on) { editRects = rects; editMark = m; }
+      return true;
+    });
+    if (editing && !editMark) { editing = null; paintBar(); } // gone from the page
+    if (editing) {
+      placeBar(editMark.blocks, editMark.start, editRects);
+      return;
+    }
+    if (!pending) { bar.classList.remove('show'); return; }
+    var rects = rectsForSpan(pending.blocks, pending.start, pending.end);
+    if (!rects) { pending = null; bar.classList.remove('show'); return; }
+    paintRects(rects, 'rgba(' + PALETTE[nextColorIdx()].rgb + ',.34)');
+    placeBar(pending.blocks, pending.start, rects);
   }
 
   function placeNotebox() {
@@ -1099,6 +1146,28 @@
 
     var container = findContainer(block);
     if (card && touch) { try { card.blur(); } catch (e) {} }
+
+    // Widening the selection you are holding comes first; after that, a tap on
+    // a passage already collected opens that fragment rather than starting
+    // something new.
+    var insidePending = false;
+    if (pending && pending.container === container) {
+      var po = absOffset(pending.blocks, cp.node, cp.offset);
+      insidePending = po >= 0 && po >= pending.start && po <= pending.end;
+    }
+    if (!insidePending) {
+      var hit = markAtPoint(cp);
+      if (hit) {
+        pending = null;
+        editing = hit.fid;
+        hideChip();
+        notebox.classList.remove('show');
+        paintBar();
+        redraw();
+        return;
+      }
+    }
+    leaveEdit();
     if (pending && pending.container === container) {
       // Same message: grow (across paragraphs too) or cycle the scope.
       // Restarting here is deliberate friction — ✕ on the bar, or tap a
@@ -1169,11 +1238,49 @@
     if (pending) collectPending();
   });
   $('cancelBtn').addEventListener('click', clearPending);
-  // One tap on a verb collects the passage classified — the bike-native path:
-  // no keyboard, no note, the verb carries the intent.
-  renderVerbs($('barVerbs'), function (id) {
-    if (pending) collectPending('', 'post', id);
+  $('removeBtn').addEventListener('click', function () {
+    if (!editing) return;
+    var id = editing;
+    fragments = fragments.filter(function (x) { return x.id !== id; });
+    marks = marks.filter(function (m) { return m.fid !== id; });
+    editing = null;
+    persist(); updatePill(); redraw();
+    if (sheetOpen) renderList();
+    toast('Removed');
   });
+
+  // The bar wears one of two faces. Collecting: ＋ Add, ✎ Note, and a verb
+  // collects in one tap. Editing a passage already collected: its number, a
+  // note to rewrite, Remove, and the verbs showing how it is filed.
+  function paintBar() {
+    var f = editing ? fragById(editing) : null;
+    if (f) {
+      var i = fragments.indexOf(f);
+      var tag = $('editTag');
+      tag.textContent = String(i + 1);
+      tag.style.background = PALETTE[f.colorIdx].badgeBg;
+      tag.style.color = PALETTE[f.colorIdx].badgeInk;
+      tag.hidden = false;
+      $('addBtn').hidden = true;
+      $('removeBtn').hidden = false;
+      renderVerbs($('barVerbs'), function (id) {
+        f.verb = f.verb === id ? '' : id;
+        persist();
+        paintBar();
+        if (sheetOpen) renderList();
+      }, function (v) { return f.verb === v; });
+      return;
+    }
+    $('editTag').hidden = true;
+    $('addBtn').hidden = false;
+    $('removeBtn').hidden = true;
+    // One tap on a verb collects the passage classified — the bike-native
+    // path: no keyboard, no note, the verb carries the intent.
+    renderVerbs($('barVerbs'), function (id) {
+      if (pending) collectPending('', 'post', id);
+    });
+  }
+  paintBar();
 
   var notePos = 'post';
   function setNotePos(p) {
@@ -1189,16 +1296,30 @@
     renderVerbs($('noteVerbs'), setNoteVerb, function (v) { return v === noteVerb; });
   }
   $('noteBtn').addEventListener('click', function () {
-    if (!pending) return;
-    setNotePos('post');
-    noteVerb = '';
-    renderVerbs($('noteVerbs'), setNoteVerb, function () { return false; });
-    $('noteInput').value = '';
+    var f = editing ? fragById(editing) : null;
+    if (!pending && !f) return;
+    setNotePos(f ? (f.notePos || 'post') : 'post');
+    noteVerb = f ? (f.verb || '') : '';
+    renderVerbs($('noteVerbs'), setNoteVerb, function (v) { return v === noteVerb; });
+    $('noteInput').value = f ? (f.note || '') : '';
+    $('noteAdd').textContent = f ? 'Save' : 'Add';
     notebox.classList.add('show');
     placeNotebox();
     $('noteInput').focus();
   });
   function noteboxAdd() {
+    var f = editing ? fragById(editing) : null;
+    if (f) {
+      f.note = $('noteInput').value.trim();
+      f.notePos = notePos;
+      f.verb = noteVerb;
+      persist();
+      notebox.classList.remove('show');
+      paintBar();
+      if (sheetOpen) renderList();
+      toast('Saved');
+      return;
+    }
     if (!pending) { notebox.classList.remove('show'); return; }
     collectPending($('noteInput').value.trim(), notePos, noteVerb);
   }
