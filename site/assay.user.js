@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.9.3
+// @version      0.9.4
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -22,7 +22,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.9.3';
+  var VERSION = '0.9.4';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -303,7 +303,17 @@
   //    on the guarded field itself never counts as leaving it.
   // 3. On a steal, focus and the caret position are restored.
   var lastPointer = { ts: 0, target: null, inHost: false };
+  var preTapActive = null, lastPointerType = '', tapStart = null, tapMoved = false;
+  document.addEventListener('pointermove', function (e) {
+    if (tapStart && Math.abs(e.clientX - tapStart.x) + Math.abs(e.clientY - tapStart.y) > 10) tapMoved = true;
+  }, { capture: true, passive: true });
   document.addEventListener('pointerdown', function (e) {
+    // Captured before the browser moves focus, so a tap can tell "already
+    // editing here" from "just landed here".
+    preTapActive = document.activeElement;
+    lastPointerType = e.pointerType || '';
+    tapStart = { x: e.clientX, y: e.clientY };
+    tapMoved = false;
     lastPointer = { ts: Date.now(), target: null, inHost: e.target === host };
   }, true);
   root.addEventListener('pointerdown', function (e) {
@@ -505,18 +515,34 @@
   // offsets on that axis.
   var BLOCK_SEL = 'p,li,blockquote,h1,h2,h3,h4,h5,h6,td,th,dd,dt,pre';
 
+  // Most replies wrap paragraphs in <p>. A card that lays its lines out as
+  // <div>s still has a block-level ancestor, and for our purposes that is the
+  // paragraph.
+  function blockAnchor(el) {
+    var b = el.closest(BLOCK_SEL);
+    if (b) return b;
+    var n = el;
+    while (n && n.nodeType === 1 && n !== document.body) {
+      var d = '';
+      try { d = window.getComputedStyle(n).display; } catch (e) { return null; }
+      if (d && d.indexOf('inline') !== 0 && d !== 'contents') return n;
+      n = n.parentElement;
+    }
+    return null;
+  }
+
   // `light` skips word/sentence segmentation: re-anchoring marks only needs
   // the text axis and its nodes, and segmenting a whole conversation on every
   // attempt would be slow on a phone.
   function buildBlocks(container, light) {
     var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
-    var blocks = [], cur = null, n;
+    var blocks = [], cur = null, n, lastEl = null, lastAnchor = null;
     while ((n = walker.nextNode())) {
       if (!n.nodeValue) continue;
       var el = n.parentElement;
       if (!el) continue;
       if (el.closest('button,[role="button"],svg,style,script')) continue;
-      var anchor = el.closest(BLOCK_SEL);
+      var anchor = el.closest(BLOCK_SEL) || (el === lastEl ? lastAnchor : (lastAnchor = blockAnchor(el), lastEl = el, lastAnchor));
       if (!anchor || !container.contains(anchor)) continue;
       if (!cur || cur.el !== anchor) {
         cur = { el: anchor, nodes: [], text: '' };
@@ -674,33 +700,58 @@
   }
 
   function findBlock(el) {
-    var block = el.closest && el.closest('p,li,blockquote,h1,h2,h3,h4,h5,h6,td,th,dd,dt,pre');
-    if (!block) return null;
-    if (block.closest('[contenteditable="true"]')) return null;
+    var block = el.closest ? blockAnchor(el) : null;
+    if (!block || host.contains(block)) return null;
+    var ed = block.closest(EDITABLE_SEL);
+    if (ed && !host.contains(ed)) {
+      // Inside the composer this is a draft; inside anything else editable —
+      // a canvas card, a message being edited in place — it is a passage.
+      // Short lines count there: a card is written in them.
+      return isComposerEl(ed) ? null : block;
+    }
     if (block.closest('[data-message-author-role="assistant"]')) return block;
     if (block.closest('.font-claude-message')) return block;
+    if ((block.textContent || '').trim().length < 30) return null;
     var main = document.querySelector('main');
-    if (main && main.contains(block) && (block.textContent || '').trim().length >= 30) return block;
-    return null;
+    if (main && main.contains(block)) return block;
+    // Cards the site renders outside <main> still belong to the conversation.
+    return block.closest(TURN_SEL) ? block : null;
   }
 
-  // ChatGPT (and Claude) swap a message into an edit box in place. Tap-to-
-  // select cannot work inside one — a <textarea> has no text nodes to range
-  // over, and in a contenteditable a tap belongs to the caret — but the text
-  // is still worth collecting by long-press, and tapping into the box must
-  // not throw away the selection you already had.
-  var EDITABLE_SEL = 'textarea,input,[contenteditable="true"],[contenteditable=""]';
+  // Editable regions in the page fall into two kinds, and only one of them is
+  // off limits. The site's composer holds a draft you are writing. Everything
+  // else editable — ChatGPT's inline canvas card, a message swapped into an
+  // edit box in place — is rendered text you are reading, and reads like the
+  // rest of the conversation.
+  var RICH_SEL = '[contenteditable="true"],[contenteditable=""]';
+  var EDITABLE_SEL = 'textarea,input,' + RICH_SEL;
   var TURN_SEL = 'article,[data-message-author-role],[data-testid="user-message"],.font-claude-message';
-  function inChatEditor(el) {
+
+  function isComposerEl(ed) {
+    if (!ed || !ed.closest) return false;
+    if (ed.id === 'prompt-textarea') return true;
+    if (ed.querySelector && ed.querySelector('#prompt-textarea')) return true;
+    // Both sites wrap the composer in a form (ChatGPT) or fieldset (Claude);
+    // a card in the conversation sits in neither.
+    if (ed.closest('form,fieldset')) return true;
+    return !!ed.closest('[data-testid*="composer"],[class*="composer"],[class*="Composer"]');
+  }
+
+  // The editable the tap landed in, unless it is the composer.
+  function pageEditable(el, sel) {
     if (!el || !el.closest) return null;
-    var ed = el.closest(EDITABLE_SEL);
+    var ed = el.closest(sel || EDITABLE_SEL);
     if (!ed || ed === host || host.contains(ed)) return null;
-    return ed.closest(TURN_SEL) ? ed : null;
+    return isComposerEl(ed) ? null : ed;
   }
 
   // The message that a tapped block belongs to; blocks fall back to
   // themselves on unknown layouts, giving single-paragraph behavior there.
   function findContainer(block) {
+    // A canvas card is a document of its own: keep growth inside it rather
+    // than letting a selection run out into the reply around it.
+    var ed = pageEditable(block, RICH_SEL);
+    if (ed) return ed;
     return block.closest('[data-message-author-role],[data-testid="user-message"],.font-claude-message') || block;
   }
 
@@ -749,20 +800,41 @@
     if (e.target === host) return;
     var el = e.target && e.target.nodeType === 1 ? e.target : (e.target ? e.target.parentElement : null);
     if (!el || host.contains(el)) return;
-    if (el.closest && el.closest('a,button,input,textarea,select,[contenteditable],[role="button"],svg')) {
-      // Tapping into an in-chat edit box means "I am editing", not "start
-      // over": keep what is already selected behind it.
-      if (!inChatEditor(el)) clearPending();
+    var onControl = el.closest && el.closest('a,button,select,[role="button"],svg');
+    // Text in a rich editable that isn't the composer — ChatGPT's inline
+    // canvas card, a message being edited in place — is read like any other
+    // passage, so a tap there selects.
+    var card = onControl ? null : pageEditable(el, RICH_SEL);
+    // On a touchscreen the caret must not stay behind: the keyboard would
+    // cover what you are reading. So we hand focus back after each tap —
+    // which also means a card that already holds focus holds it deliberately
+    // (the site's own edit control put it there), and we leave it alone. With
+    // a mouse there is no keyboard to raise, so the caret can stay and the
+    // card stays editable by clicking into it.
+    var touch = lastPointerType === 'touch';
+    if (card && touch && (preTapActive === card || card.contains(preTapActive))) return;
+    if (!card && el.closest && el.closest('a,button,input,textarea,select,[contenteditable],[role="button"],svg')) {
+      // Tapping into an edit box means "I am editing", not "start over":
+      // keep what is already selected behind it.
+      if (!pageEditable(el)) clearPending();
       return;
     }
     var sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return; // long-press selection flow owns this
+    if (sel && !sel.isCollapsed) {
+      // Inside a card the browser makes its own selection: tapping a word a
+      // second time selects it, a third time takes the paragraph — which
+      // would hijack the scope cycle. A selection the user dragged out (or
+      // long-pressed) is theirs, so only a tap that never moved is dropped.
+      if (!card || tapMoved) return; // that selection is the user's
+      try { sel.removeAllRanges(); } catch (e2) {}
+    }
     var block = findBlock(el);
     if (!block) { clearPending(); return; }
     var cp = caretPoint(e.clientX, e.clientY);
     if (!cp) { clearPending(); return; }
 
     var container = findContainer(block);
+    if (card && touch) { try { card.blur(); } catch (e) {} }
     if (pending && pending.container === container) {
       // Same message: grow (across paragraphs too) or cycle the scope.
       // Restarting here is deliberate friction — ✕ on the bar, or tap a
@@ -1016,7 +1088,7 @@
     if (!ae || !ae.tagName) return null;
     var tag = ae.tagName.toLowerCase();
     if (tag !== 'textarea' && tag !== 'input') return null;
-    if (!inChatEditor(ae)) return null;
+    if (!pageEditable(ae)) return null;
     try {
       var a = ae.selectionStart, b = ae.selectionEnd;
       if (a == null || b == null || b - a < MIN_SEL_LEN) return null;
@@ -1041,9 +1113,8 @@
     var node = sel.anchorNode;
     var el = node ? (node.nodeType === 1 ? node : node.parentElement) : null;
     if (!el || host.contains(el)) return;
-    // Text in the site's own composer is a draft, not a passage; text in an
-    // in-chat edit box is a passage the user deliberately selected.
-    if (el.closest && el.closest('[contenteditable="true"],textarea,input') && !inChatEditor(el)) {
+    // Text in the site's own composer is a draft, not a passage.
+    if (el.closest && el.closest(EDITABLE_SEL) && !pageEditable(el)) {
       hideChip();
       return;
     }

@@ -41,3 +41,12 @@ Append only. Never edit an entry after the fact.
   about ChatGPT's in-chat edit box: tapping into one keeps what you had
   selected instead of clearing it, and a long-press selection inside one —
   textarea or contenteditable — can be collected like any other passage.
+- **2026-09-07** — taps now work inside the cards ChatGPT renders in the
+  conversation. The rule used to be "skip anything editable", which was aimed
+  at the composer but also excluded the canvas card — the place a draft is
+  actually read. It is now "skip the composer", and everything else editable
+  reads like the conversation. Three things had to follow: a block anchor that
+  falls back to the nearest block-level ancestor for cards that lay out lines
+  as divs, handing the caret straight back on touch so the keyboard never
+  opens, and ignoring the word the browser selects by itself on a repeat tap
+  in an editable, which was hijacking the scope cycle.

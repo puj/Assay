@@ -88,7 +88,9 @@ The interaction is a small grammar you can learn in a minute:
 1. **Tap a word** in an assistant reply. It highlights; an action bar appears next to it.
 2. **Tap the highlight** to cycle its scope: word → sentence → paragraph → word.
 3. **Tap another word in the same reply** to grow the selection to include it. This works across paragraph boundaries, in either direction.
-4. **Tap a different reply, empty space, or ✕** to start over. Long-press selection still works for arbitrary spans, including inside an in-chat edit box, where a tap belongs to the caret.
+4. **Tap a different reply, empty space, or ✕** to start over. Long-press selection still works for arbitrary spans.
+
+The same taps work inside the cards ChatGPT renders in the conversation — a canvas draft, a message swapped into an edit box. On a phone the caret is handed straight back, so the keyboard never opens over what you are reading. The only text Assay leaves alone is the composer: that is your draft, not a passage.
 5. **＋ Add** collects it. **✎ Note** attaches a few words, placed *before* the quote (a lead-in) or *after* it (an instruction). Or tap a **verb** (Keep, Push, Tweak, Reword, Challenge, Cut) to collect it classified in one tap, no keyboard.
 6. Open the **tray** to annotate later, set or change a verb, or remove a fragment (its highlight goes with it).
 7. **↗ To composer** writes the set into the message box. **⭳ .md** or **⭳ .txt** saves the whole conversation locally instead.
