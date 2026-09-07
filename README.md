@@ -164,7 +164,7 @@ ChatGPT (`chatgpt.com`, `chat.openai.com`), Claude (`claude.ai`) and GitHub (`gi
 The same thing, over a file instead of a reply: tap to collect passages from a file's rendered markdown or from its code lines, where each line is a paragraph and keeps its indentation. Every file keeps its own list, ⭳ .md exports the file with your fragments appended, and since there is no message box the primary action is ⧉ Copy notes.
 
 **Where are my fragments stored?**
-In the chat site's `localStorage` on that device, one list per conversation. Switching from the userscript to the store extension keeps them, since the storage belongs to the site, not the extension.
+In the site's `localStorage` on that device, one list per conversation — or per file, on GitHub. Switching from the userscript to the store extension keeps them, since the storage belongs to the site, not the extension.
 
 **Can I export a whole ChatGPT or Claude conversation to Markdown?**
 Yes. ⭳ .md saves the visible conversation, roles, text and code blocks, with your fragments appended, as `assay-<chat title>-<date>-<time>.md`. ⭳ .txt does the same in plain text. Scroll to the top of very long threads first so everything is loaded.
