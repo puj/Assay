@@ -21,3 +21,8 @@ Append only. Never edit an entry after the fact.
   package and mints a GitHub Release; v0.8.0 and v0.8.1 exist. Firefox's new
   data-collection declaration added (`required: ["none"]`) after the first AMO
   submission attempt rejected the manifest.
+- **2026-09-07** — the verb palette, unparked. Keep · Push · Fix · Challenge ·
+  Cut sit under Add/Note; one tap collects a passage classified, and the verb
+  renders as a plain-English clause in the prompt. Prompted by writing on a
+  gym bike: typing is expensive there, judgment is not. A "next pass" button
+  was considered and dropped — it is To composer under another name.

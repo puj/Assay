@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.8.1
+// @version      0.9.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -22,7 +22,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.8.1';
+  var VERSION = '0.9.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -39,6 +39,20 @@
     { rgb: '251,146,60', badgeBg: '#fed7aa', badgeInk: '#9a3412' }   // orange
   ];
   function nextColorIdx() { return fragments.length % PALETTE.length; }
+  // The verb palette: one tap classifies a passage instead of writing a note.
+  // Each verb renders as a plain-English leading clause in the payload, so the
+  // model needs no legend and the payload stays boilerplate-free.
+  var VERBS = [
+    { id: 'keep', label: 'Keep', clause: 'keep as is' },
+    { id: 'push', label: 'Push', clause: 'push this further' },
+    { id: 'fix', label: 'Fix', clause: 'right idea, reword it' },
+    { id: 'challenge', label: 'Challenge', clause: 'challenge this' },
+    { id: 'cut', label: 'Cut', clause: 'drop this' }
+  ];
+  function verbById(id) {
+    for (var i = 0; i < VERBS.length; i++) if (VERBS[i].id === id) return VERBS[i];
+    return null;
+  }
 
   function loadJSON(key, fallback) {
     try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (e) { return fallback; }
@@ -54,6 +68,7 @@
   function normalize(list) {
     list.forEach(function (f, i) {
       if (!f.notePos) f.notePos = 'post';
+      if (typeof f.verb !== 'string') f.verb = '';
       if (typeof f.colorIdx !== 'number') f.colorIdx = i % PALETTE.length;
     });
     return list;
@@ -116,12 +131,16 @@
     '*{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}' +
     'button{border:0;cursor:pointer;background:none;padding:0}' +
     '.hl{position:fixed;border-radius:3px;pointer-events:none;z-index:4}' +
-    '.bar{position:fixed;display:none;align-items:center;gap:2px;background:#111827;color:#f9fafb;' +
-      'padding:5px 8px;border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.35);z-index:10;user-select:none}' +
+    '.bar{position:fixed;display:none;flex-direction:column;align-items:flex-start;gap:2px;background:#111827;color:#f9fafb;' +
+      'padding:5px 8px;border-radius:18px;box-shadow:0 4px 16px rgba(0,0,0,.35);z-index:10;user-select:none}' +
     '.bar.show{display:flex}' +
     '.bar button{color:#f9fafb;font-size:14px;font-weight:600;padding:6px 10px;border-radius:999px;touch-action:manipulation;white-space:nowrap}' +
     '.bar button:active{background:#374151}' +
     '.bar .x{color:#9ca3af}' +
+    '.bar .row{display:flex;gap:2px;align-items:center}' +
+    '.verbs{display:flex;gap:4px;flex-wrap:wrap}' +
+    '.vb{background:#1f2937;color:#cbd5e1;font-size:13px;font-weight:600;border-radius:999px;padding:6px 11px;touch-action:manipulation;white-space:nowrap}' +
+    '.vb:active,.vb.on{background:#38bdf8;color:#0c1220}' +
     '.notebox{position:fixed;display:none;flex-direction:column;gap:8px;background:#111827;color:#f9fafb;' +
       'padding:10px 12px;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.4);z-index:26;' +
       'width:min(480px,calc(100vw - 16px))}' +
@@ -164,6 +183,8 @@
     '.frag input:focus{border-color:#38bdf8;border-style:solid}' +
     '.frag .pos{flex:none;background:#e2e8f0;color:#475569;font-size:12px;font-weight:700;' +
       'border-radius:999px;padding:7px 10px;touch-action:manipulation}' +
+    '.frag .pos.verb{background:#f1f5f9;color:#94a3b8}' +
+    '.frag .pos.verb.on{background:#0284c7;color:#fff}' +
     '.empty{padding:26px 10px;text-align:center;color:#64748b;font-size:14px;line-height:1.6}' +
     '.empty .restore{color:#0284c7;font-weight:600;text-decoration:underline;font-size:14px}' +
     '.actions{display:flex;gap:10px;padding:10px 14px 0}' +
@@ -185,6 +206,8 @@
       '.frag .txt{color:#e2e8f0}' +
       '.frag input{background:#0f172a;border-color:#475569;color:#e2e8f0}' +
       '.frag .pos{background:#334155;color:#cbd5e1}' +
+      '.frag .pos.verb{background:#1e293b;color:#64748b}' +
+      '.frag .pos.verb.on{background:#38bdf8;color:#0c1220}' +
       '.btn.minor{background:#334155;color:#cbd5e1}' +
       '.empty{color:#94a3b8}' +
       '.manual textarea{background:#1e293b;border-color:#475569;color:#e2e8f0}' +
@@ -192,12 +215,16 @@
     '</style>' +
     '<div id="hlLayer"></div>' +
     '<div class="bar" id="bar">' +
-      '<button id="addBtn">&#xFF0B; Add</button>' +
-      '<button id="noteBtn">&#x270E; Note</button>' +
-      '<button class="x" id="cancelBtn">&#x2715;</button>' +
+      '<div class="row">' +
+        '<button id="addBtn">&#xFF0B; Add</button>' +
+        '<button id="noteBtn">&#x270E; Note</button>' +
+        '<button class="x" id="cancelBtn">&#x2715;</button>' +
+      '</div>' +
+      '<div class="verbs" id="barVerbs"></div>' +
     '</div>' +
     '<div class="notebox" id="notebox">' +
       '<input id="noteInput" type="text" placeholder="annotation &mdash; e.g. &ldquo;formalize this&rdquo;">' +
+      '<div class="verbs" id="noteVerbs"></div>' +
       '<div class="row">' +
         '<button class="posbtn" id="posPre">before</button>' +
         '<button class="posbtn on" id="posPost">after</button>' +
@@ -372,12 +399,13 @@
     }
   }
 
-  function addFragment(text, note, notePos) {
+  function addFragment(text, note, notePos, verb) {
     var frag = {
       id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
       text: text,
       note: note || '',
       notePos: notePos || 'post',
+      verb: verbById(verb) ? verb : '',
       colorIdx: nextColorIdx(),
       ts: Date.now()
     };
@@ -735,17 +763,36 @@
     redraw();
   });
 
-  function collectPending(note, notePos) {
+  function collectPending(note, notePos, verb) {
     var p = pending;
-    var frag = addFragment(pendingText(), note, notePos);
+    var frag = addFragment(pendingText(), note, notePos, verb);
     marks.push({ fid: frag.id, blocks: p.blocks, start: p.start, end: p.end, colorIdx: frag.colorIdx });
     clearPending();
+  }
+
+  // Renders the verb chips into a container; `onPick` gets the verb id and
+  // `isOn` says which chip (if any) shows as selected.
+  function renderVerbs(container, onPick, isOn) {
+    container.textContent = '';
+    VERBS.forEach(function (v) {
+      var b = document.createElement('button');
+      b.className = 'vb' + (isOn && isOn(v.id) ? ' on' : '');
+      b.textContent = v.label;
+      b.title = v.clause;
+      b.addEventListener('click', function () { onPick(v.id); });
+      container.appendChild(b);
+    });
   }
 
   $('addBtn').addEventListener('click', function () {
     if (pending) collectPending();
   });
   $('cancelBtn').addEventListener('click', clearPending);
+  // One tap on a verb collects the passage classified — the bike-native path:
+  // no keyboard, no note, the verb carries the intent.
+  renderVerbs($('barVerbs'), function (id) {
+    if (pending) collectPending('', 'post', id);
+  });
 
   var notePos = 'post';
   function setNotePos(p) {
@@ -755,9 +802,16 @@
   }
   $('posPre').addEventListener('click', function () { setNotePos('pre'); });
   $('posPost').addEventListener('click', function () { setNotePos('post'); });
+  var noteVerb = '';
+  function setNoteVerb(id) {
+    noteVerb = noteVerb === id ? '' : id;
+    renderVerbs($('noteVerbs'), setNoteVerb, function (v) { return v === noteVerb; });
+  }
   $('noteBtn').addEventListener('click', function () {
     if (!pending) return;
     setNotePos('post');
+    noteVerb = '';
+    renderVerbs($('noteVerbs'), setNoteVerb, function () { return false; });
     $('noteInput').value = '';
     notebox.classList.add('show');
     placeNotebox();
@@ -765,7 +819,7 @@
   });
   function noteboxAdd() {
     if (!pending) { notebox.classList.remove('show'); return; }
-    collectPending($('noteInput').value.trim(), notePos);
+    collectPending($('noteInput').value.trim(), notePos, noteVerb);
   }
   $('noteAdd').addEventListener('click', noteboxAdd);
   $('noteInput').addEventListener('keydown', function (e) {
@@ -958,7 +1012,26 @@
       persist();
     });
 
-    row.appendChild(note); row.appendChild(pos);
+    // Tap cycles none → keep → push → fix → challenge → cut → none, so a
+    // verb can be set or changed later without a keyboard.
+    var vb = document.createElement('button');
+    vb.className = 'pos verb';
+    function paintVerb() {
+      var v = verbById(f.verb);
+      vb.textContent = v ? v.label : 'verb';
+      vb.title = v ? v.clause : 'Classify this fragment';
+      vb.classList.toggle('on', !!v);
+    }
+    paintVerb();
+    vb.addEventListener('click', function () {
+      var i = -1;
+      VERBS.forEach(function (v, k) { if (v.id === f.verb) i = k; });
+      f.verb = i + 1 < VERBS.length ? VERBS[i + 1].id : '';
+      paintVerb();
+      persist();
+    });
+
+    row.appendChild(note); row.appendChild(vb); row.appendChild(pos);
     item.appendChild(top);
     item.appendChild(row);
     return item;
@@ -975,19 +1048,30 @@
 
   // ------------------------------------------------------- payload & export
   // No wrapper prompt: the payload is the fragments and their annotations.
+  // The leading clause before a quote: the verb's plain-English reading, a
+  // `pre` note, or both joined with a dash.
+  function leadClause(f) {
+    var v = verbById(f.verb);
+    var note = (f.note || '').trim();
+    var parts = [];
+    if (v) parts.push(v.clause);
+    if (note && f.notePos === 'pre') parts.push(note);
+    return parts.join(' — ');
+  }
   function buildPayload() {
     var many = fragments.length > 1;
     return fragments.map(function (f, i) {
       var head = many ? (i + 1) + '. ' : '';
       var note = (f.note || '').trim();
+      var lead = leadClause(f);
       var lines = [];
-      if (note && f.notePos === 'pre') {
-        lines.push(head + note + ':');
+      if (lead) {
+        lines.push(head + lead + ':');
         lines.push('“' + f.text.trim() + '”');
       } else {
         lines.push(head + '“' + f.text.trim() + '”');
-        if (note) lines.push('→ ' + note);
       }
+      if (note && f.notePos !== 'pre') lines.push('→ ' + note);
       return lines.join('\n');
     }).join('\n\n');
   }
@@ -1087,8 +1171,9 @@
     lines.push('---', '', '## Collected fragments (' + fragments.length + ')', '');
     fragments.forEach(function (f, i) {
       var note = (f.note || '').trim();
+      var lead = leadClause(f);
       lines.push('### ' + (i + 1), '');
-      if (note && f.notePos === 'pre') lines.push('*' + note + ':*', '');
+      if (lead) lines.push('*' + lead + ':*', '');
       f.text.trim().split('\n').forEach(function (l) { lines.push('> ' + l); });
       if (note && f.notePos !== 'pre') lines.push('', '→ *' + note + '*');
       lines.push('');
@@ -1284,7 +1369,7 @@
     _debug: function () {
       return {
         pending: pending ? { start: pending.start, end: pending.end, scope: pending.scope, text: pendingText() } : null,
-        fragments: fragments.map(function (f) { return { text: f.text, note: f.note, notePos: f.notePos, colorIdx: f.colorIdx }; }),
+        fragments: fragments.map(function (f) { return { text: f.text, note: f.note, notePos: f.notePos, verb: f.verb, colorIdx: f.colorIdx }; }),
         marks: marks.length,
         exportMd: buildConversationMarkdown(getConversation()),
         exportTxt: buildConversationText(getConversation())

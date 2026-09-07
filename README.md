@@ -55,6 +55,7 @@ Assay gives that step an interface. While you read a reply on
 - **Tap the highlight to widen it**: word → sentence → paragraph → back to the word.
 - **Tap nearby words to grow the selection** toward them, across paragraph breaks.
 - **＋ Add** collects the passage; **✎ Note** annotates it, before or after the quote, now or later.
+- **A verb palette** for when typing is expensive: **Keep · Push · Fix · Challenge · Cut**. One tap collects the passage classified; the verb becomes a plain-English clause in the prompt.
 - **Six rotating highlight colours** so you can see what you already took.
 - **A tray** holds everything you kept while the chat stays scrollable; a pill toggles it.
 - **↗ To composer** writes your fragments and notes into the site's own message box. Nothing is auto-sent; you review, then send.
@@ -88,23 +89,25 @@ The interaction is a small grammar you can learn in a minute:
 2. **Tap the highlight** to cycle its scope: word → sentence → paragraph → word.
 3. **Tap another word in the same reply** to grow the selection to include it. This works across paragraph boundaries, in either direction.
 4. **Tap a different reply, empty space, or ✕** to start over. Long-press selection still works for arbitrary spans.
-5. **＋ Add** collects it. **✎ Note** attaches a few words, placed *before* the quote (a lead-in) or *after* it (an instruction).
-6. Open the **tray** to annotate later or remove a fragment (its highlight goes with it).
+5. **＋ Add** collects it. **✎ Note** attaches a few words, placed *before* the quote (a lead-in) or *after* it (an instruction). Or tap a **verb** (Keep, Push, Fix, Challenge, Cut) to collect it classified in one tap, no keyboard.
+6. Open the **tray** to annotate later, set or change a verb, or remove a fragment (its highlight goes with it).
 7. **↗ To composer** writes the set into the message box. **⭳ .md** or **⭳ .txt** saves the whole conversation locally instead.
 
 What lands in the composer is plain text with no boilerplate, numbered only
 when there is more than one fragment:
 
 ```
-1. connect to the garbage collector:
+1. push this further:
 “The garbage collector becomes the allocator of life.”
 
 2. “Creators rarely bear the cost of rejection.”
 → formalize this
 ```
 
-A *pre* note renders as a leading clause; a *post* note renders as a `→`
-line after the quote.
+A verb or a *pre* note renders as a leading clause (`keep as is`, `push this
+further`, `right idea, reword it`, `challenge this`, `drop this`); a *post*
+note renders as a `→` line after the quote. No legend is sent: the clauses
+are ordinary English.
 
 Under the hood, taps resolve to text with `caretPositionFromPoint` and
 `Intl.Segmenter` (regex fallback), inside a virtual text axis per message so
@@ -116,7 +119,7 @@ re-attached on in-app navigation. Note controls and the tray track
 
 ## Screenshots
 
-<img src="store/screenshot-1.png" alt="Assay in a chat: three passages in an assistant reply are highlighted in different colours, an Add / Note / cancel bar floats under the latest one, and a Deep dive pill in the corner shows two collected fragments">
+<img src="store/screenshot-1.png" alt="Assay in a chat: three passages in an assistant reply are highlighted in different colours, an action bar with Add, Note, cancel and a row of verbs (Keep, Push, Fix, Challenge, Cut) floats under the latest one, and a Deep dive pill in the corner shows two collected fragments">
 
 <img src="store/screenshot-2.png" alt="The Assay tray, titled Collected fragments, listing three quotes with a short note under each and an after/before toggle, plus Clear, .md, .txt and To composer buttons">
 
@@ -207,10 +210,8 @@ Issues and pull requests are welcome: <https://github.com/puj/Assay/issues>.
 
 ## Roadmap
 
-- **An editing verb palette.** The same tap surface, with per-fragment verbs
-  instead of just add/annotate: *keep · push · fix · challenge · connect ·
-  cut*, and a single "next pass" that compiles them into the follow-up
-  prompt. Parked until the reading loop has proved itself.
+- A **connect** verb that relates a fragment to earlier fragments, which
+  needs the cross-conversation list below.
 - A shared cross-conversation fragment list, and an archive across sessions.
 - Editable payload templates.
 - Claude selector hardening; store listings for one-tap installs.

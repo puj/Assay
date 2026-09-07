@@ -45,6 +45,8 @@ non-affiliation line.
 > - Tap the highlight to widen: word → sentence → paragraph → back
 > - Tap nearby words to grow the selection, across paragraph breaks
 > - ＋ Add collects it; ✎ Note annotates it, before or after the quote
+> - Or tap a verb — Keep, Push, Fix, Challenge, Cut — to collect it classified
+>   in one tap, no keyboard; the verb becomes a plain-English clause
 > - Six rotating highlight colours, so you can see what you already took
 > - A tray holding everything you kept, while the chat stays scrollable
 > - ↗ To composer writes your fragments and notes into the message box
