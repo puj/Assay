@@ -63,7 +63,36 @@ Microsoft Partner Center accepts the same zip; Edge desktop and Edge
 Android both read from it. Free registration. Same listing copy. Worth it
 for near-zero effort once the CWS listing text exists.
 
-## 4. Releases and auto-publish
+## 4. Wiring the stores for automatic updates
+
+Both listings exist now, so the only thing between a merge and a store
+update is a set of repo secrets (Settings → Secrets and variables → Actions).
+Each publish job skips — loudly, as a run warning and a line in the run
+summary — while its secrets are missing, which is why a green run does not by
+itself mean a store got the build. Read the run summary.
+
+- [x] **Firefox** — `AMO_JWT_ISSUER` + `AMO_JWT_SECRET` are set, and every
+      release since v0.9.0 has been submitted for review. Nothing to do but
+      wait for the first approval; after that, each version auto-submits.
+- [ ] **Chrome** — not wired yet, which is why the store still shows the
+      version you uploaded by hand. Add three secrets:
+      `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`
+      (developer.chrome.com/docs/webstore/using-api — create an OAuth client
+      of type "Desktop app" in a Google Cloud project with the Chrome Web
+      Store API enabled, then mint a refresh token once). The extension id
+      `pjffannabifdkfiealnipianjdeipgag` is already in the workflow, so
+      `CWS_EXTENSION_ID` is only needed if the listing ever moves.
+- [ ] **Edge** — Partner Center → your product → Publish API. Add
+      `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KEY`. The job is written
+      against the documented v1.1 REST flow but has never run against the
+      real API; the first release after the secrets land is the one that
+      proves it, and it prints the API's own error if anything is off.
+
+The stores reject a version number they already hold, so a release only
+reaches them when `VERSION` in `src/assay.core.js` has been bumped — which is
+also what mints the GitHub Release the jobs upload.
+
+## 5. Releases and auto-publish
 
 Every merge to master that touches the extension builds it and creates a
 **GitHub Release** tagged `v<version>` with `assay-extension.zip`,
@@ -90,7 +119,7 @@ Actions):
       keeps all fragments, since they live in the site's localStorage, not
       in the extension.
 
-## 5. Discoverability after listing
+## 6. Discoverability after listing
 
 - [ ] AMO + CWS listing URLs onto projectnothing.ai (a /assay page that
       also hosts the privacy policy and links the install page for the

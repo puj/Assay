@@ -25,10 +25,10 @@
   <a href="https://github.com/puj/Assay/releases/latest"><img src="https://img.shields.io/github/v/release/puj/Assay?color=1f6f5f" alt="Latest release"></a>
   <a href="https://github.com/puj/Assay/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/puj/Assay/release.yml?branch=master&label=build" alt="Build status"></a>
   <img src="https://img.shields.io/badge/data%20collection-none-1f6f5f" alt="No data collection">
-  <img src="https://img.shields.io/badge/works%20on-ChatGPT%20%C2%B7%20Claude-555" alt="Works on ChatGPT and Claude">
-  <!-- Once the store listings are live:
-  <a href="https://addons.mozilla.org/firefox/addon/assay/"><img src="https://img.shields.io/amo/v/assay?label=Firefox%20Add-ons" alt="Firefox Add-ons"></a>
-  <a href="https://chromewebstore.google.com/detail/EXTENSION_ID"><img src="https://img.shields.io/chrome-web-store/v/EXTENSION_ID?label=Chrome%20Web%20Store" alt="Chrome Web Store"></a>
+  <img src="https://img.shields.io/badge/works%20on-ChatGPT%20%C2%B7%20Claude%20%C2%B7%20GitHub-555" alt="Works on ChatGPT, Claude and GitHub">
+  <a href="https://chromewebstore.google.com/detail/assay-deep-dive-for-ai-ch/pjffannabifdkfiealnipianjdeipgag"><img src="https://img.shields.io/chrome-web-store/v/pjffannabifdkfiealnipianjdeipgag?label=Chrome%20Web%20Store&color=1f6f5f" alt="Chrome Web Store"></a>
+  <!-- Uncomment once the first Firefox version is approved:
+  <a href="https://addons.mozilla.org/firefox/addon/assay-deep-dive-for-ai-chats/"><img src="https://img.shields.io/amo/v/assay-deep-dive-for-ai-chats?label=Firefox%20Add-ons" alt="Firefox Add-ons"></a>
   -->
 </p>
 
@@ -74,9 +74,9 @@ same local storage, so you can switch between them without losing anything.
 
 | You are on | Do this |
 | --- | --- |
-| **Firefox for Android** (recommended on phones) | Install the userscript in [Tampermonkey](https://addons.mozilla.org/firefox/addon/tampermonkey/) or [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/): open **<https://assay.projectnothing.ai/assay.user.js>** and accept. It auto-updates. The step-by-step version is at [assay.projectnothing.ai/install](https://assay.projectnothing.ai/install). |
-| **Firefox desktop** | Same userscript route, or the Firefox Add-ons listing once it clears review (link will appear here and on the site). |
-| **Chrome, Edge, Brave (desktop)** | Chrome Web Store listing pending. Until then: download `assay-extension.zip` from the [latest release](https://github.com/puj/Assay/releases/latest), unzip it, open `chrome://extensions`, turn on *Developer mode*, choose *Load unpacked* and pick the folder. |
+| **Chrome, Edge, Brave (desktop)** | [**Add to Chrome**](https://chromewebstore.google.com/detail/assay-deep-dive-for-ai-ch/pjffannabifdkfiealnipianjdeipgag) — the Chrome Web Store listing. Edge installs from it too, until the Edge Add-ons listing lands. |
+| **Firefox desktop** | [**Firefox Add-ons**](https://addons.mozilla.org/firefox/addon/assay-deep-dive-for-ai-chats/) once the first version clears review; until then, the userscript route below works today. |
+| **Firefox for Android** (recommended on phones) | The store listing covers Android once approved. Today: install the userscript in [Tampermonkey](https://addons.mozilla.org/firefox/addon/tampermonkey/) or [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/) by opening **<https://assay.projectnothing.ai/assay.user.js>** and accepting. It auto-updates. Step by step at [assay.projectnothing.ai/install](https://assay.projectnothing.ai/install). |
 | **Chrome on Android, Safari, anything else** | The **bookmarklet**: open [assay.projectnothing.ai/install](https://assay.projectnothing.ai/install), add the bookmark it gives you, and tap it once per visit. Zero install, nothing to update. |
 
 Works on `chatgpt.com`, `chat.openai.com`, `claude.ai` and `github.com`.

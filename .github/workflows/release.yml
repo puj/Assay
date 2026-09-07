@@ -8,7 +8,13 @@
 # listing is created by hand — see store/SUBMIT-CHECKLIST.md):
 #   AMO_JWT_ISSUER / AMO_JWT_SECRET          addons.mozilla.org → Tools → Manage API Keys
 #   CWS_CLIENT_ID / CWS_CLIENT_SECRET /
-#   CWS_REFRESH_TOKEN / CWS_EXTENSION_ID     Chrome Web Store API OAuth
+#   CWS_REFRESH_TOKEN                        Chrome Web Store API OAuth
+#                                            (CWS_EXTENSION_ID defaults to the live listing)
+#   EDGE_PRODUCT_ID / EDGE_CLIENT_ID /
+#   EDGE_API_KEY                             Partner Center → Publish API (v1.1)
+#
+# A leg with no secrets skips rather than fails — and says so, as a warning
+# and in the run summary, so a skipped upload never reads as a shipped one.
 #
 # Bump VERSION in src/assay.core.js per release: a version that already has
 # a release is skipped, and the stores reject duplicate versions.
@@ -97,11 +103,14 @@ jobs:
         env:
           AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           if [ -z "$AMO_JWT_ISSUER" ]; then
-            echo "AMO secrets not configured - skipping Firefox publish."
+            echo "::warning title=Firefox publish skipped::AMO_JWT_ISSUER/AMO_JWT_SECRET are not set, so v$VERSION was not sent to Firefox Add-ons."
+            echo "- **Firefox Add-ons** — skipped, no AMO secrets" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          echo "- **Firefox Add-ons** — submitted v$VERSION for review" >> "$GITHUB_STEP_SUMMARY"
           mkdir -p ext && unzip -q dist/assay-extension.zip -d ext
           npx web-ext@8 sign --channel=listed \
             --source-dir=ext \
@@ -123,15 +132,79 @@ jobs:
           node-version: 20
       - name: Upload the released zip to the Chrome Web Store
         env:
-          EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          # The live listing's id, overridable by a secret if it ever moves.
+          EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID || 'pjffannabifdkfiealnipianjdeipgag' }}
           CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
           REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           if [ -z "$REFRESH_TOKEN" ]; then
-            echo "Chrome Web Store secrets not configured - skipping Chrome publish."
+            echo "::warning title=Chrome publish skipped::CWS_CLIENT_ID/CWS_CLIENT_SECRET/CWS_REFRESH_TOKEN are not set, so v$VERSION was not sent to the Chrome Web Store."
+            echo "- **Chrome Web Store** — skipped, no CWS secrets" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           npx chrome-webstore-upload-cli@3 upload \
             --source dist/assay-extension.zip \
             --auto-publish
+          echo "- **Chrome Web Store** — uploaded v$VERSION, publishing on review" >> "$GITHUB_STEP_SUMMARY"
+
+  # Edge Add-ons, through Partner Center's Publish API v1.1: upload the package
+  # into the draft submission, wait for it to validate, then publish. Written
+  # against the documented REST flow and inert until the secrets exist — the
+  # first real run is the one that proves it, and every failure below prints
+  # the API's own response.
+  publish-edge:
+    needs: [build, release]
+    if: needs.release.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: assay-${{ needs.build.outputs.version }}
+          path: dist
+      - name: Upload the released zip to Edge Add-ons
+        env:
+          PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+          CLIENT_ID: ${{ secrets.EDGE_CLIENT_ID }}
+          API_KEY: ${{ secrets.EDGE_API_KEY }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_KEY:-}" ]; then
+            echo "::warning title=Edge publish skipped::EDGE_PRODUCT_ID/EDGE_CLIENT_ID/EDGE_API_KEY are not set, so v$VERSION was not sent to Edge Add-ons."
+            echo "- **Edge Add-ons** — skipped, no Edge secrets" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          BASE="https://api.addons.microsoftedge.microsoft.com/v1/products/$PRODUCT_ID/submissions"
+          AUTH=(-H "Authorization: ApiKey $API_KEY" -H "X-ClientID: $CLIENT_ID")
+
+          # Poll an operation until it leaves InProgress, or give up after ~10 min.
+          poll() { # $1 = operation URL
+            for _ in $(seq 1 60); do
+              sleep 10
+              body=$(curl -sS "${AUTH[@]}" "$1")
+              status=$(printf '%s' "$body" | python3 -c "import json,sys; print((json.load(sys.stdin) or {}).get('status',''))" 2>/dev/null || echo '')
+              echo "  $status"
+              case "$status" in
+                Succeeded) return 0 ;;
+                Failed|Cancelled) echo "$body"; return 1 ;;
+              esac
+            done
+            echo "Timed out waiting for $1"; return 1
+          }
+
+          echo "Uploading the package…"
+          loc=$(curl -sS -D - -o /dev/null -X POST "${AUTH[@]}" \
+            -H "Content-Type: application/zip" \
+            --data-binary @dist/assay-extension.zip \
+            "$BASE/draft/package" | tr -d '\r' | awk 'tolower($1)=="location:"{print $2}')
+          [ -n "$loc" ] || { echo "No operation id came back from the package upload."; exit 1; }
+          poll "$BASE/draft/package/operations/$loc"
+
+          echo "Publishing…"
+          loc=$(curl -sS -D - -o /dev/null -X POST "${AUTH[@]}" -H "Content-Length: 0" \
+            "$BASE" | tr -d '\r' | awk 'tolower($1)=="location:"{print $2}')
+          [ -n "$loc" ] || { echo "No operation id came back from the publish call."; exit 1; }
+          poll "$BASE/operations/$loc"
+          echo "- **Edge Add-ons** — uploaded and published v$VERSION" >> "$GITHUB_STEP_SUMMARY"

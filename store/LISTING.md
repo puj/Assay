@@ -5,6 +5,13 @@ trademark (store policy); "ChatGPT" and "Claude" appear in the descriptions,
 where a nominative compatibility statement is accepted, together with the
 non-affiliation line.
 
+## Live listings
+
+- **Chrome Web Store:** https://chromewebstore.google.com/detail/assay-deep-dive-for-ai-ch/pjffannabifdkfiealnipianjdeipgag
+  (extension id `pjffannabifdkfiealnipianjdeipgag`)
+- **Firefox Add-ons:** https://addons.mozilla.org/firefox/addon/assay-deep-dive-for-ai-chats/
+- **Edge Add-ons:** not submitted yet — same zip, same copy.
+
 ## Names
 
 - **Product name:** Assay

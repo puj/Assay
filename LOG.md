@@ -64,3 +64,10 @@ Append only. Never edit an entry after the fact.
   verb it is filed under shown as selected, Note prefilled with what it says,
   and Remove. The list in the tray was the only place to change your mind
   before, which meant leaving the page you were reading.
+- **2026-09-07** — the Chrome listing had been sitting on the version uploaded
+  by hand: its publish job has skipped every release since the pipeline was
+  built, because no CWS secrets exist, and a skip exited green and silent. It
+  now warns and writes what each store actually received into the run summary,
+  so a green run can no longer read as a shipped one. Firefox is unaffected —
+  the two legs are independent, and AMO has had every version since v0.9.0.
+  An Edge leg joins them, inert until its secrets land.
