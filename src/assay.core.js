@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.9.1';
+  var VERSION = '0.9.2';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -629,13 +629,17 @@
     var vw = window.innerWidth, vh = window.innerHeight, ins = viewportInsets();
     var bw = bar.offsetWidth || 180, bh = bar.offsetHeight || 40;
     var left = Math.max(8, Math.min(last.left, vw - bw - 8));
-    // The bar sits above the selection: reading runs downward, so the lines
-    // you are about to tap to grow the selection must stay uncovered, and
-    // anchoring to the first line keeps the bar still while you grow it.
-    // Below is the fallback when the selection starts near the top edge.
-    var top = rects[0].top - bh - 10;
-    if (top < ins.top + 8) top = last.bottom + 10;
-    if (top + bh > vh - ins.bottom - 8) top = Math.max(ins.top + 8, rects[0].top - bh - 10);
+    // The bar keeps a full line of clearance from the selection on whichever
+    // side it sits, so the neighbouring line above and below both stay
+    // tappable and a selection can grow in either direction. It prefers
+    // above (anchored to the first line, so it holds still while you grow
+    // downward) and falls back to below when the selection starts near the
+    // top edge.
+    var lh = last.height || rects[0].height || 24;
+    var gap = Math.round(lh * 1.2) + 6;
+    var top = rects[0].top - gap - bh;
+    if (top < ins.top + 8) top = last.bottom + gap;
+    if (top + bh > vh - ins.bottom - 8) top = Math.max(ins.top + 8, rects[0].top - gap - bh);
     bar.style.left = left + 'px';
     bar.style.top = top + 'px';
   }

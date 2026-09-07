@@ -31,3 +31,6 @@ Append only. Never edit an entry after the fact.
   Reword. And the action bar moved above the selection: it used to sit on
   the very lines you tap next to grow a selection downward, which made
   bottom-to-top selection a learned workaround rather than an ergonomic one.
+- **2026-09-07** — the bar now keeps a line of clearance on whichever side of
+  the selection it sits, so the neighbouring line above and below both stay
+  tappable and a selection grows up or down without a learned direction.

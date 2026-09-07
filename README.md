@@ -119,7 +119,7 @@ re-attached on in-app navigation. Note controls and the tray track
 
 ## Screenshots
 
-<img src="store/screenshot-1.png" alt="Assay in a chat: three passages in an assistant reply are highlighted in different colours, an action bar with Add, Note, cancel and a row of verbs (Keep, Push, Tweak, Reword, Challenge, Cut) floats above the latest one, and a Deep dive pill in the corner shows two collected fragments">
+<img src="store/screenshot-1.png" alt="Assay in a chat: three passages in an assistant reply are highlighted in different colours, an action bar with Add, Note, cancel and a row of verbs (Keep, Push, Tweak, Reword, Challenge, Cut) floats a line above the latest one, and a Deep dive pill in the corner shows two collected fragments">
 
 <img src="store/screenshot-2.png" alt="The Assay tray, titled Collected fragments, listing three quotes with a short note under each and an after/before toggle, plus Clear, .md, .txt and To composer buttons">
 
