@@ -35,7 +35,7 @@ It reads nothing on any other website, and it does not run anywhere else.
 ## Where your data lives, and how to remove it
 
 Fragments and notes are stored under keys beginning `assay.` in the local
-storage of the chat site, grouped per conversation. They stay on the device
+storage of the site, grouped per conversation — or per file, on GitHub. They stay on the device
 that made them: they are not synced, backed up or transmitted.
 
 To remove them, delete individual fragments with ✕, or use **Clear** in the
