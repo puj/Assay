@@ -53,7 +53,7 @@ Assay gives that step an interface. While you read a reply on
 
 - **Tap a word** in a reply and it highlights, with a small action bar.
 - **Tap the highlight to widen it**: word → sentence → paragraph → back to the word.
-- **Tap nearby words to grow the selection** toward them, across paragraph breaks.
+- **Tap nearby words to grow the selection** toward them, across a paragraph break; tap further away and you start a new selection there.
 - **＋ Add** collects the passage; **✎ Note** annotates it, before or after the quote, now or later.
 - **A verb palette** for when typing is expensive: **Keep · Push · Tweak · Reword · Challenge · Cut**. One tap collects the passage classified; the verb becomes a plain-English clause in the prompt.
 - **Six rotating highlight colours** so you can see what you already took, and they survive a page refresh.
@@ -87,7 +87,7 @@ The interaction is a small grammar you can learn in a minute:
 
 1. **Tap a word** in an assistant reply. It highlights; an action bar appears next to it.
 2. **Tap the highlight** to cycle its scope: word → sentence → paragraph → word.
-3. **Tap another word in the same reply** to grow the selection to include it. This works across paragraph boundaries, in either direction.
+3. **Tap another word in the same reply** to grow the selection to include it, in either direction, and into the paragraph next to it. A tap further off than that is a different passage, so it starts a new selection there instead — reaching a distant paragraph is a tap at a time.
 4. **Tap a different reply, empty space, or ✕** to start over. Long-press selection still works for arbitrary spans.
 
 The same taps work inside the cards ChatGPT renders in the conversation — a canvas draft, a message swapped into an edit box. On a phone the caret is handed straight back, so the keyboard never opens over what you are reading. The only text Assay leaves alone is the composer: that is your draft, not a passage.

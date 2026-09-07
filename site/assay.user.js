@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.9.4
+// @version      0.9.5
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -22,7 +22,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.9.4';
+  var VERSION = '0.9.5';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -658,6 +658,23 @@
     }
   }
 
+  // The rects a Range hands back are tight around the glyphs, so they
+  // under-report how far apart two lines sit; the block's own line-height is
+  // the distance a reader sees, and what the bar must clear.
+  function linePitch(blocks, off, fallback) {
+    var b = blockAt(blocks, off);
+    if (b && b.el) {
+      try {
+        var cs = window.getComputedStyle(b.el);
+        var lh = parseFloat(cs.lineHeight);
+        if (lh > 0) return lh;
+        var fs = parseFloat(cs.fontSize);
+        if (fs > 0) return fs * 1.5;
+      } catch (e) {}
+    }
+    return fallback * 1.6;
+  }
+
   function redraw() {
     hlLayer.textContent = '';
     // Session marks for already-collected fragments (drop dead ones quietly).
@@ -684,8 +701,8 @@
     // above (anchored to the first line, so it holds still while you grow
     // downward) and falls back to below when the selection starts near the
     // top edge.
-    var lh = last.height || rects[0].height || 24;
-    var gap = Math.round(lh * 1.2) + 6;
+    var lh = linePitch(pending.blocks, pending.start, last.height || rects[0].height || 16);
+    var gap = Math.round(lh * 1.75) + 8;
     var top = rects[0].top - gap - bh;
     if (top < ins.top + 8) top = last.bottom + gap;
     if (top + bh > vh - ins.bottom - 8) top = Math.max(ins.top + 8, rects[0].top - gap - bh);
@@ -849,9 +866,22 @@
         var b2 = blockAt(pending.blocks, off);
         var w = b2 && wordAt(b2.words, off);
         if (w) {
-          if (off >= pending.end) pending.end = Math.max(pending.end, w.end);
-          else pending.start = Math.min(pending.start, w.start);
-          pending.scope = 'custom';
+          // Growing is for the passage in hand: the paragraph you are in, or
+          // the one against it. A tap further off is a different passage, so
+          // it starts a new selection there rather than dragging the
+          // highlight across everything in between. Reaching a paragraph
+          // beyond the next one is a tap at a time.
+          var bi = pending.blocks.indexOf(b2);
+          var lo = pending.blocks.indexOf(blockAt(pending.blocks, pending.start));
+          var hi = pending.blocks.indexOf(blockAt(pending.blocks, Math.max(pending.start, pending.end - 1)));
+          if (bi >= lo - 1 && bi <= hi + 1) {
+            if (off >= pending.end) pending.end = Math.max(pending.end, w.end);
+            else pending.start = Math.min(pending.start, w.start);
+            pending.scope = 'custom';
+          } else if (!beginPending(container, pending.blocks, off)) {
+            clearPending();
+            return;
+          }
           redraw();
           return;
         }
