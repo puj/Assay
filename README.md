@@ -56,7 +56,7 @@ Assay gives that step an interface. While you read a reply on
 - **Tap nearby words to grow the selection** toward them, across paragraph breaks.
 - **＋ Add** collects the passage; **✎ Note** annotates it, before or after the quote, now or later.
 - **A verb palette** for when typing is expensive: **Keep · Push · Tweak · Reword · Challenge · Cut**. One tap collects the passage classified; the verb becomes a plain-English clause in the prompt.
-- **Six rotating highlight colours** so you can see what you already took.
+- **Six rotating highlight colours** so you can see what you already took, and they survive a page refresh.
 - **A tray** holds everything you kept while the chat stays scrollable; a pill toggles it.
 - **↗ To composer** writes your fragments and notes into the site's own message box. Nothing is auto-sent; you review, then send.
 - **⭳ .md / ⭳ .txt** export the *whole* conversation as Markdown or plain text with your fragments appended, named after the chat: `assay-<chat title>-<date>-<time>.md`.
@@ -88,7 +88,7 @@ The interaction is a small grammar you can learn in a minute:
 1. **Tap a word** in an assistant reply. It highlights; an action bar appears next to it.
 2. **Tap the highlight** to cycle its scope: word → sentence → paragraph → word.
 3. **Tap another word in the same reply** to grow the selection to include it. This works across paragraph boundaries, in either direction.
-4. **Tap a different reply, empty space, or ✕** to start over. Long-press selection still works for arbitrary spans.
+4. **Tap a different reply, empty space, or ✕** to start over. Long-press selection still works for arbitrary spans, including inside an in-chat edit box, where a tap belongs to the caret.
 5. **＋ Add** collects it. **✎ Note** attaches a few words, placed *before* the quote (a lead-in) or *after* it (an instruction). Or tap a **verb** (Keep, Push, Tweak, Reword, Challenge, Cut) to collect it classified in one tap, no keyboard.
 6. Open the **tray** to annotate later, set or change a verb, or remove a fragment (its highlight goes with it).
 7. **↗ To composer** writes the set into the message box. **⭳ .md** or **⭳ .txt** saves the whole conversation locally instead.
@@ -129,7 +129,7 @@ re-attached on in-app navigation. Note controls and the tray track
 
 - **No account, no server, no analytics, no API keys.** Your existing ChatGPT or Claude subscription does all the inference.
 - **Nothing leaves your device** except the message you choose to send, through the site's own composer.
-- Fragments and notes live in the site's `localStorage`, on your device, keyed per conversation.
+- Fragments and notes live in the site's `localStorage`, on your device, keyed per conversation. Highlights are re-found in the page after a refresh; nothing is written to the conversation itself.
 - The extension makes **no network requests** and loads **no remote code**. It runs only on the three chat hosts above.
 - The full policy is [`PRIVACY.md`](PRIVACY.md), published at <https://www.projectnothing.ai/assay/privacy>.
 

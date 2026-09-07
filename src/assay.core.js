@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.9.2';
+  var VERSION = '0.9.3';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -265,6 +265,7 @@
       saveMap(MAP_KEY, map);
     }
     fragments = normalize(list);
+    anchorSig = '';
     updatePill();
     redraw();
     if (sheetOpen) renderList();
@@ -486,7 +487,10 @@
   // offsets on that axis.
   var BLOCK_SEL = 'p,li,blockquote,h1,h2,h3,h4,h5,h6,td,th,dd,dt,pre';
 
-  function buildBlocks(container) {
+  // `light` skips word/sentence segmentation: re-anchoring marks only needs
+  // the text axis and its nodes, and segmenting a whole conversation on every
+  // attempt would be slow on a phone.
+  function buildBlocks(container, light) {
     var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     var blocks = [], cur = null, n;
     while ((n = walker.nextNode())) {
@@ -509,6 +513,7 @@
       b.start = off;
       b.end = off + b.text.length;
       off = b.end + 2; // virtual paragraph gap
+      if (light) return;
       var shift = function (seg) { return { start: seg.start + b.start, end: seg.end + b.start }; };
       b.words = segmentWords(b.text).map(shift);
       b.sentences = segmentSentences(b.text).map(shift);
@@ -661,6 +666,20 @@
     return null;
   }
 
+  // ChatGPT (and Claude) swap a message into an edit box in place. Tap-to-
+  // select cannot work inside one — a <textarea> has no text nodes to range
+  // over, and in a contenteditable a tap belongs to the caret — but the text
+  // is still worth collecting by long-press, and tapping into the box must
+  // not throw away the selection you already had.
+  var EDITABLE_SEL = 'textarea,input,[contenteditable="true"],[contenteditable=""]';
+  var TURN_SEL = 'article,[data-message-author-role],[data-testid="user-message"],.font-claude-message';
+  function inChatEditor(el) {
+    if (!el || !el.closest) return null;
+    var ed = el.closest(EDITABLE_SEL);
+    if (!ed || ed === host || host.contains(ed)) return null;
+    return ed.closest(TURN_SEL) ? ed : null;
+  }
+
   // The message that a tapped block belongs to; blocks fall back to
   // themselves on unknown layouts, giving single-paragraph behavior there.
   function findContainer(block) {
@@ -713,7 +732,9 @@
     var el = e.target && e.target.nodeType === 1 ? e.target : (e.target ? e.target.parentElement : null);
     if (!el || host.contains(el)) return;
     if (el.closest && el.closest('a,button,input,textarea,select,[contenteditable],[role="button"],svg')) {
-      clearPending();
+      // Tapping into an in-chat edit box means "I am editing", not "start
+      // over": keep what is already selected behind it.
+      if (!inChatEditor(el)) clearPending();
       return;
     }
     var sel = window.getSelection();
@@ -821,6 +842,115 @@
   guardInput($('noteInput'));
   guardInput($('manualTxt'));
 
+  // ------------------------------------------ restoring marks after a reload
+  // Marks hang off live DOM nodes, so a refresh — or the site re-rendering a
+  // message — wipes the highlights while the fragments themselves persist in
+  // storage. Find each orphaned fragment's text in the conversation again and
+  // re-attach its mark, so a reload looks like nothing happened.
+  function messageContainers() {
+    var nodes = document.querySelectorAll(TURN_SEL);
+    var list = nodes.length ? Array.prototype.slice.call(nodes) : [];
+    if (!list.length) {
+      var main = document.querySelector('main');
+      if (main) list = [main];
+    }
+    return list.filter(function (el) { return !host.contains(el); });
+  }
+
+  // The flat text of the axis buildBlocks lays out, gaps included, so an
+  // offset found here is an offset a mark can use directly.
+  function flatOf(blocks) {
+    var s = '';
+    blocks.forEach(function (b) {
+      while (s.length < b.start) s += ' ';
+      s += b.text;
+    });
+    return s;
+  }
+
+  function findSpan(flat, parts, from) {
+    var s = flat.indexOf(parts[0], from);
+    if (s < 0) return null;
+    var e = s + parts[0].length;
+    for (var i = 1; i < parts.length; i++) {
+      var k = flat.indexOf(parts[i], e);
+      if (k < 0) return null;
+      e = k + parts[i].length;
+    }
+    return { start: s, end: e };
+  }
+
+  function overlaps(used, span) {
+    return used.some(function (u) { return span.start < u.end && u.start < span.end; });
+  }
+
+  function reanchorMarks() {
+    var have = {};
+    marks.forEach(function (m) { have[m.fid] = true; });
+    var missing = fragments.filter(function (f) { return !have[f.id]; });
+    if (!missing.length) return 0;
+    var containers = messageContainers();
+    if (!containers.length) return 0;
+
+    var cache = [];
+    function ctx(el) {
+      for (var i = 0; i < cache.length; i++) if (cache[i].el === el) return cache[i];
+      var blocks = buildBlocks(el, true);
+      var c = { el: el, blocks: blocks, flat: flatOf(blocks), used: [] };
+      // Spans already spoken for by a live mark in this container.
+      marks.forEach(function (m) {
+        if (m.blocks.length && blocks.length && m.blocks[0].el === blocks[0].el) {
+          c.used.push({ start: m.start, end: m.end });
+        }
+      });
+      cache.push(c);
+      return c;
+    }
+
+    var added = 0;
+    missing.forEach(function (f) {
+      var parts = (f.text || '').split('\n\n').map(function (t) { return t.trim(); })
+        .filter(function (t) { return t.length; });
+      if (!parts.length) return;
+      var span = 0;
+      parts.forEach(function (t) { span += t.length; });
+      var limit = span + 200;
+      for (var i = 0; i < containers.length; i++) {
+        if (containers[i].textContent.indexOf(parts[0]) < 0) continue; // cheap pre-filter
+        var c = ctx(containers[i]);
+        var from = 0, hit;
+        while ((hit = findSpan(c.flat, parts, from))) {
+          if (!overlaps(c.used, hit)) break;
+          from = hit.start + 1;
+        }
+        if (!hit || hit.end - hit.start > limit) continue;
+        c.used.push(hit);
+        marks.push({ fid: f.id, blocks: c.blocks, start: hit.start, end: hit.end, colorIdx: f.colorIdx });
+        added++;
+        return;
+      }
+    });
+    return added;
+  }
+
+  // Messages stream in and lazy-render, so try a few times and start over
+  // whenever the conversation or the fragment list changes.
+  var anchorTries = 0, anchorSig = '';
+  function maybeReanchor() {
+    if (!fragments.length) return;
+    var have = {};
+    marks.forEach(function (m) { have[m.fid] = true; });
+    var missing = fragments.some(function (f) { return !have[f.id]; });
+    if (!missing) return;
+    var sig = document.querySelectorAll(TURN_SEL).length + ':' + fragments.length;
+    if (sig !== anchorSig) { anchorSig = sig; anchorTries = 4; }
+    if (anchorTries <= 0) return;
+    anchorTries--;
+    if (reanchorMarks()) redraw();
+  }
+  setInterval(maybeReanchor, 1200);
+  setTimeout(maybeReanchor, 400);
+
   var redrawScheduled = false;
   function scheduleRedraw() {
     if ((!pending && !marks.length) || redrawScheduled) return;
@@ -853,12 +983,39 @@
   }
 
   var selTimer = null;
-  document.addEventListener('selectionchange', function () {
+  function queueSelection() {
     clearTimeout(selTimer);
     selTimer = setTimeout(onSelection, 250);
-  });
+  }
+  document.addEventListener('selectionchange', queueSelection);
+  // Not every browser reports a textarea's selection through selectionchange.
+  document.addEventListener('select', queueSelection, true);
+
+  // A <textarea>/<input> keeps its selection to itself: window.getSelection()
+  // reports nothing, so read it off the element instead.
+  function editorSelection() {
+    var ae = document.activeElement;
+    if (!ae || !ae.tagName) return null;
+    var tag = ae.tagName.toLowerCase();
+    if (tag !== 'textarea' && tag !== 'input') return null;
+    if (!inChatEditor(ae)) return null;
+    try {
+      var a = ae.selectionStart, b = ae.selectionEnd;
+      if (a == null || b == null || b - a < MIN_SEL_LEN) return null;
+      var text = String(ae.value || '').slice(a, b).trim();
+      if (text.length < MIN_SEL_LEN) return null;
+      return { el: ae, text: text };
+    } catch (e) { return null; }
+  }
 
   function onSelection() {
+    var inEditor = editorSelection();
+    if (inEditor) {
+      clearPending();
+      selPendingText = inEditor.text;
+      showChip(inEditor.el.getBoundingClientRect());
+      return;
+    }
     var sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) { hideChip(); return; }
     var text = sel.toString().trim();
@@ -866,8 +1023,12 @@
     var node = sel.anchorNode;
     var el = node ? (node.nodeType === 1 ? node : node.parentElement) : null;
     if (!el || host.contains(el)) return;
-    // Don't offer to collect text the user is editing.
-    if (el.closest && el.closest('[contenteditable="true"],textarea,input')) { hideChip(); return; }
+    // Text in the site's own composer is a draft, not a passage; text in an
+    // in-chat edit box is a passage the user deliberately selected.
+    if (el.closest && el.closest('[contenteditable="true"],textarea,input') && !inChatEditor(el)) {
+      hideChip();
+      return;
+    }
     clearPending();
     selPendingText = text;
     var rect = null;
@@ -884,6 +1045,8 @@
     addFragment(selPendingText);
     selPendingText = '';
     hideChip();
+    anchorSig = '';
+    maybeReanchor(); // paint its highlight now rather than on the next tick
     try { window.getSelection().removeAllRanges(); } catch (err) {}
   });
 

@@ -34,3 +34,10 @@ Append only. Never edit an entry after the fact.
 - **2026-09-07** — the bar now keeps a line of clearance on whichever side of
   the selection it sits, so the neighbouring line above and below both stay
   tappable and a selection grows up or down without a learned direction.
+- **2026-09-07** — highlights now survive a refresh. Fragments always did, but
+  their tinted marks hung off live DOM nodes, so a reload left the tray full
+  and the page blank; each orphaned fragment's text is now found in the
+  conversation again and re-marked. The same pass taught the selection flow
+  about ChatGPT's in-chat edit box: tapping into one keeps what you had
+  selected instead of clearing it, and a long-press selection inside one —
+  textarea or contenteditable — can be collected like any other passage.
