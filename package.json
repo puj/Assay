@@ -7,7 +7,8 @@
   "scripts": {
     "build": "node build.js",
     "assets": "node scripts/render_assets.js",
-    "video": "node scripts/video.js"
+    "video": "node scripts/video.js",
+    "cws-token": "node scripts/cws-refresh-token.js"
   },
   "devDependencies": {
     "playwright-core": "^1.50.0"

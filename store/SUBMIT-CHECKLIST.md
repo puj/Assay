@@ -75,13 +75,25 @@ itself mean a store got the build. Read the run summary.
       release since v0.9.0 has been submitted for review. Nothing to do but
       wait for the first approval; after that, each version auto-submits.
 - [ ] **Chrome** — not wired yet, which is why the store still shows the
-      version you uploaded by hand. Add three secrets:
-      `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`
-      (developer.chrome.com/docs/webstore/using-api — create an OAuth client
-      of type "Desktop app" in a Google Cloud project with the Chrome Web
-      Store API enabled, then mint a refresh token once). The extension id
-      `pjffannabifdkfiealnipianjdeipgag` is already in the workflow, so
-      `CWS_EXTENSION_ID` is only needed if the listing ever moves.
+      version you uploaded by hand. Three secrets are needed:
+      `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET`, `CWS_REFRESH_TOKEN`. In the Google
+      Cloud project that has the Chrome Web Store API enabled:
+
+      1. **OAuth consent screen** → user type External → add yourself as a
+         test user. Then **publish it** (Audience → Publish app): while it
+         sits in "Testing", Google expires the refresh token after **seven
+         days** and the uploads start failing a week later.
+      2. **Credentials → Create credentials → OAuth client ID → Desktop app.**
+         Keep the client id and secret.
+      3. `npm run cws-token` — it prints a URL to authorise in a browser
+         signed in as the Chrome Web Store developer, catches the callback on
+         localhost, and prints the refresh token plus the three `gh secret
+         set` commands to paste.
+
+      The extension id `pjffannabifdkfiealnipianjdeipgag` is already in the
+      workflow, so `CWS_EXTENSION_ID` is only needed if the listing moves.
+      The Google account you authorise with must be the one that owns (or is
+      a published-item member of) the Chrome Web Store listing.
 - [ ] **Edge** — Partner Center → your product → Publish API. Add
       `EDGE_PRODUCT_ID`, `EDGE_CLIENT_ID`, `EDGE_API_KEY`. The job is written
       against the documented v1.1 REST flow but has never run against the

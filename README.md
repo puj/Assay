@@ -200,6 +200,7 @@ runtime dependency.
 node build.js        # regenerate assay.user.js, extension/, install.html, site/, the zip
 npm run assets       # re-render icons, screenshots and promo tiles (needs playwright-core)
 npm run video        # re-record the demo video
+npm run cws-token    # mint the Chrome Web Store refresh token the release job needs
 ```
 
 To hack on it, load `extension/` unpacked in a desktop browser, or paste
