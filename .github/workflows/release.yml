@@ -169,6 +169,24 @@ jobs:
               echo "::error title=Chrome Web Store::Google rejected the refresh token: expired or revoked. A consent screen left in Testing expires tokens after seven days — publish it, run 'npm run cws-token' again, and replace CWS_REFRESH_TOKEN."
             elif grep -qi 'invalid_client\|unauthorized_client' cws.log; then
               echo "::error title=Chrome Web Store::Google did not accept CWS_CLIENT_ID/CWS_CLIENT_SECRET as a pair. Check both against APIs & Services → Credentials."
+            elif grep -q 'Forbidden' cws.log; then
+              # The CLI prints "errors: [Array]" and swallows the reason. Ask
+              # the API about the item directly and show what it says.
+              echo "Asking the Chrome Web Store why…"
+              TOKEN=$(curl -sS -X POST https://oauth2.googleapis.com/token \
+                -d client_id="$CLIENT_ID" -d client_secret="$CLIENT_SECRET" \
+                -d refresh_token="$REFRESH_TOKEN" -d grant_type=refresh_token \
+                | python3 -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))")
+              if [ -n "$TOKEN" ]; then
+                curl -sS "https://www.googleapis.com/chromewebstore/v1.1/items/$EXTENSION_ID?projection=DRAFT" \
+                  -H "Authorization: Bearer $TOKEN" -H "x-goog-api-version: 2" | tee item.log
+                echo
+                if grep -q accessNotConfigured item.log; then
+                  echo "::error title=Chrome Web Store::The Chrome Web Store API is not enabled in the Cloud project that owns this OAuth client. Enable it there (APIs & Services → Library → Chrome Web Store API) — enabling it in a different project does not count."
+                elif grep -qi 'not own\|does not exist\|forbidden' item.log; then
+                  echo "::error title=Chrome Web Store::The Google account you authorised cannot publish item $EXTENSION_ID. Authorise with the account that owns the listing (or one with publish rights on it) and mint the token again with 'npm run cws-token'."
+                fi
+              fi
             fi
             exit 1
           fi
