@@ -58,8 +58,9 @@ non-affiliation line.
 > - A tray holding everything you kept, while the chat stays scrollable
 > - Tap a passage you already kept to refile, re-annotate or remove it
 > - ↗ To composer writes your fragments and notes into the message box
-> - ⭳ Export the whole conversation as Markdown or plain text, your fragments
->   and notes appended — a verbatim local record, named after the chat
+> - ⭳ Export the conversation as Markdown or plain text, your fragments and
+>   notes appended — a verbatim local record, named after the chat. Choose
+>   which messages go in: tap ↓ on one to take it and everything after
 > - Every conversation keeps its own list
 >
 > **Private by design**

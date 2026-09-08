@@ -71,3 +71,10 @@ Append only. Never edit an entry after the fact.
   so a green run can no longer read as a shipped one. Firefox is unaffected —
   the two legs are independent, and AMO has had every version since v0.9.0.
   An Edge leg joins them, inert until its secrets land.
+- **2026-09-08** — the export learned to take part of a conversation. Thirty
+  messages and wanting the last six was a download-then-delete job; ⭳ .md and
+  ⭳ .txt now open a picker listing every message with who spoke and enough of
+  it to recognise, opening at the recent end, with All / None / Last 2 /
+  Last 6 and — the one that matters — ↓ on a message to take it and everything
+  after. The file says what it holds, "messages 19–30 of 30", so a partial
+  export can't be mistaken for the whole thread later.

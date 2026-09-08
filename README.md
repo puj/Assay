@@ -60,7 +60,7 @@ Assay gives that step an interface. While you read a reply on
 - **A tray** holds everything you kept while the chat stays scrollable; a pill toggles it. Tap a collected passage on the page to change or remove it in place.
 - **↗ To composer** writes your fragments and notes into the site's own message box. Nothing is auto-sent; you review, then send.
 - **On GitHub**, where there is no message box, the same tray offers **⧉ Copy notes** instead: the set goes to the clipboard and stays in the tray.
-- **⭳ .md / ⭳ .txt** export the *whole* conversation as Markdown or plain text with your fragments appended, named after the chat: `assay-<chat title>-<date>-<time>.md`.
+- **⭳ .md / ⭳ .txt** export the conversation as Markdown or plain text with your fragments appended, named after the chat: `assay-<chat title>-<date>-<time>.md`. A picker lets you choose which messages go in — each row shows who spoke and enough of the message to recognise it, and **↓** takes one message and everything after it, which is usually what you want.
 - **Every conversation keeps its own list**, so a batch started in one thread never bleeds into another.
 
 No wrapper prompt is added to what you send. Your selection is the signal and
@@ -168,7 +168,10 @@ The same thing, over a file instead of a reply: tap to collect passages from a f
 In the site's `localStorage` on that device, one list per conversation — or per file, on GitHub. Switching from the userscript to the store extension keeps them, since the storage belongs to the site, not the extension.
 
 **Can I export a whole ChatGPT or Claude conversation to Markdown?**
-Yes. ⭳ .md saves the visible conversation, roles, text and code blocks, with your fragments appended, as `assay-<chat title>-<date>-<time>.md`. ⭳ .txt does the same in plain text. Scroll to the top of very long threads first so everything is loaded.
+Yes. ⭳ .md saves the conversation, roles, text and code blocks, with your fragments appended, as `assay-<chat title>-<date>-<time>.md`. ⭳ .txt does the same in plain text. Scroll to the top of very long threads first so everything is loaded.
+
+**Can I export only part of a conversation?**
+Yes. ⭳ .md and ⭳ .txt open a picker listing every message with its author and a preview. Take all of them, use All / None / Last 2 / Last 6, tap rows individually, or tap **↓** on a message to take it and everything after it. The file records what it holds — "messages 19–30 of 30" — so a partial export is never mistaken for the whole thread.
 
 **Does it auto-send anything?**
 Never. ↗ To composer only fills the message box.

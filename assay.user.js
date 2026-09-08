@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.11.0
+// @version      0.12.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -23,7 +23,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.11.0';
+  var VERSION = '0.12.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -35,6 +35,8 @@
   var GH_CONTENT = '.markdown-body,.react-code-lines,table.js-file-line-container,.blob-wrapper';
   var GH_CODE = '.react-code-lines,table.js-file-line-container,.blob-wrapper';
   var READ_NOUN = IS_GITHUB ? 'file' : 'reply';
+  var BRAND = location.hostname === 'claude.ai' ? 'Claude'
+    : (location.hostname === 'github.com' ? 'File' : 'ChatGPT');
 
   // Rotating highlight colors: pending selection previews the color the next
   // fragment will get; collected marks stay on the page in the same hue.
@@ -201,6 +203,21 @@
       'border-radius:999px;padding:7px 10px;touch-action:manipulation}' +
     '.frag .pos.verb{background:#f1f5f9;color:#94a3b8}' +
     '.frag .pos.verb.on{background:#0284c7;color:#fff}' +
+    '.sheet .hint{margin:0 16px 8px;font-size:12px;color:#64748b}' +
+    '.picks{overflow-y:auto;padding:0 14px 4px;flex:1;-webkit-overflow-scrolling:touch}' +
+    '.pick{display:flex;gap:8px;align-items:stretch;margin-bottom:8px}' +
+    '.pick .row{flex:1;display:flex;gap:10px;align-items:flex-start;text-align:left;min-width:0;' +
+      'background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:9px 11px;touch-action:manipulation}' +
+    '.pick .row.on{border-color:#38bdf8;background:#f0f9ff}' +
+    '.pick .tick{flex:none;width:20px;height:20px;border-radius:6px;border:1.5px solid #cbd5e1;color:transparent;' +
+      'display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;margin-top:1px}' +
+    '.pick .row.on .tick{background:#0284c7;border-color:#0284c7;color:#fff}' +
+    '.pick .body{flex:1;min-width:0}' +
+    '.pick .who{display:block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#64748b}' +
+    '.pick .prev{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' +
+      'font-size:13px;line-height:1.4;color:#334155;margin-top:2px}' +
+    '.pick .from{flex:none;width:38px;border-radius:12px;background:#e2e8f0;color:#475569;' +
+      'font-size:15px;font-weight:700;touch-action:manipulation}' +
     '.empty{padding:26px 10px;text-align:center;color:#64748b;font-size:14px;line-height:1.6}' +
     '.empty .restore{color:#0284c7;font-weight:600;text-decoration:underline;font-size:14px}' +
     '.actions{display:flex;gap:10px;padding:10px 14px 0}' +
@@ -227,6 +244,11 @@
       '.btn.minor{background:#334155;color:#cbd5e1}' +
       '.empty{color:#94a3b8}' +
       '.manual textarea{background:#1e293b;border-color:#475569;color:#e2e8f0}' +
+      '.pick .row{background:#1e293b;border-color:#334155}' +
+      '.pick .row.on{background:#0c4a6e;border-color:#38bdf8}' +
+      '.pick .prev{color:#cbd5e1}' +
+      '.pick .from{background:#334155;color:#cbd5e1}' +
+      '.sheet .hint{color:#94a3b8}' +
     '}' +
     '</style>' +
     '<div id="hlLayer"></div>' +
@@ -262,6 +284,21 @@
       '</div>' +
       '<div class="actions last">' +
         '<button class="btn go" id="goBtn"></button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="sheet" id="picker">' +
+      '<header><h2 id="pickTitle">Include in the file</h2>' +
+        '<button class="close" id="pickClose">&#x2715;</button></header>' +
+      '<p class="hint">Tap &#x2193; on a message to take it and everything after it.</p>' +
+      '<div class="picks" id="pickList"></div>' +
+      '<div class="actions">' +
+        '<button class="btn minor" id="pickAll">All</button>' +
+        '<button class="btn minor" id="pickNone">None</button>' +
+        '<button class="btn minor" id="pickLast2">Last 2</button>' +
+        '<button class="btn minor" id="pickLast6">Last 6</button>' +
+      '</div>' +
+      '<div class="actions last">' +
+        '<button class="btn go" id="pickGo">&#x2B07; Download</button>' +
       '</div>' +
     '</div>' +
     '<div class="toast" id="toast"></div>';
@@ -392,7 +429,10 @@
     var n = fragments.length;
     $('count').textContent = String(n);
     $('count').style.display = n ? 'flex' : 'none';
-    pill.classList.add('show');
+    // The picker is a decision, not a place to keep collecting: the pill would
+    // only sit over its rows.
+    // (`picker` is bound further down; before that there is nothing to hide.)
+    pill.classList.toggle('show', !(picker && picker.classList.contains('show')));
     positionPill();
   }
 
@@ -1622,9 +1662,10 @@
     });
   }
 
-  function buildConversationMarkdown(turns) {
+  function buildConversationMarkdown(turns, scope) {
     if (!turns && !fragments.length) return null;
-    var lines = ['# ' + convoTitle(), '', '_' + location.hostname + ' — ' + niceStamp() + '_', ''];
+    var lines = ['# ' + convoTitle(), '',
+      '_' + location.hostname + ' — ' + niceStamp() + (scope ? ' — ' + scope : '') + '_', ''];
     if (turns) {
       turns.forEach(function (t) {
         lines.push('## ' + t.role, '');
@@ -1635,9 +1676,9 @@
     return lines.join('\n');
   }
 
-  function buildConversationText(turns) {
+  function buildConversationText(turns, scope) {
     if (!turns && !fragments.length) return null;
-    var parts = [convoTitle() + ' — ' + location.hostname + ' — ' + niceStamp()];
+    var parts = [convoTitle() + ' — ' + location.hostname + ' — ' + niceStamp() + (scope ? ' — ' + scope : '')];
     if (turns) {
       turns.forEach(function (t) {
         parts.push(t.role + ':\n' + serializeBlocks(t.el).join('\n\n'));
@@ -1666,17 +1707,133 @@
     }
   }
 
-  function exportConversation(ext, mime) {
-    var turns = getConversation();
-    var content = ext === 'md' ? buildConversationMarkdown(turns) : buildConversationText(turns);
+  // ------------------------------------------------------- choosing messages
+  // Most of the time what you want is the last few exchanges, not thirty. The
+  // picker lists the conversation with who said what and enough of each
+  // message to recognise it, and ↓ takes one message and everything after —
+  // which is that common case in a single tap.
+  var picker = $('picker'), pickList = $('pickList');
+  var pickTurns = [], picked = [], pickExt = 'md', pickMime = 'text/markdown';
+
+  function pickPreview(el) {
+    return (textOf(el) || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
+
+  // "messages 19–30 of 30" when the choice is a run, a plain count when it is
+  // not, and nothing at all when the file holds everything.
+  function pickScope() {
+    var total = pickTurns.length, on = [];
+    picked.forEach(function (v, i) { if (v) on.push(i); });
+    if (!on.length || on.length === total) return '';
+    var run = on[on.length - 1] - on[0] + 1 === on.length;
+    return run
+      ? 'messages ' + (on[0] + 1) + '–' + (on[on.length - 1] + 1) + ' of ' + total
+      : on.length + ' of ' + total + ' messages';
+  }
+
+  function paintPickHeader() {
+    var n = picked.filter(Boolean).length;
+    $('pickTitle').textContent = n === pickTurns.length
+      ? 'All ' + n + ' messages'
+      : n + ' of ' + pickTurns.length + ' messages';
+    $('pickGo').disabled = !n && !fragments.length;
+    $('pickGo').innerHTML = '&#x2B07; Download .' + pickExt;
+  }
+
+  function renderPicks() {
+    pickList.textContent = '';
+    pickTurns.forEach(function (t, i) {
+      var wrap = document.createElement('div');
+      wrap.className = 'pick';
+
+      var row = document.createElement('button');
+      row.className = 'row' + (picked[i] ? ' on' : '');
+      row.setAttribute('data-i', String(i));
+      var tick = document.createElement('span');
+      tick.className = 'tick';
+      tick.textContent = '✓';
+      var body = document.createElement('span');
+      body.className = 'body';
+      var who = document.createElement('span');
+      who.className = 'who';
+      who.textContent = t.role === 'You' ? 'You' : (t.role === 'Assistant' ? BRAND : t.role);
+      var prev = document.createElement('span');
+      prev.className = 'prev';
+      prev.textContent = pickPreview(t.el) || '(no text)';
+      body.appendChild(who); body.appendChild(prev);
+      row.appendChild(tick); row.appendChild(body);
+      row.addEventListener('click', function () {
+        picked[i] = !picked[i];
+        row.classList.toggle('on', picked[i]);
+        paintPickHeader();
+      });
+
+      var from = document.createElement('button');
+      from.className = 'from';
+      from.textContent = '↓';
+      from.title = 'This message and everything after it';
+      from.addEventListener('click', function () {
+        picked = pickTurns.map(function (_, k) { return k >= i; });
+        renderPicks();
+        paintPickHeader();
+      });
+
+      wrap.appendChild(row); wrap.appendChild(from);
+      pickList.appendChild(wrap);
+    });
+    paintPickHeader();
+  }
+
+  function setLast(n) {
+    picked = pickTurns.map(function (_, i) { return i >= pickTurns.length - n; });
+    renderPicks();
+  }
+  $('pickAll').addEventListener('click', function () { setLast(pickTurns.length); });
+  $('pickNone').addEventListener('click', function () { setLast(0); });
+  $('pickLast2').addEventListener('click', function () { setLast(2); });
+  $('pickLast6').addEventListener('click', function () { setLast(6); });
+
+  function openPicker(turns, ext, mime) {
+    hideChip();
+    clearPending();
+    pickTurns = turns;
+    pickExt = ext;
+    pickMime = mime;
+    picked = turns.map(function () { return true; });
+    closeSheet();
+    picker.classList.add('show');
+    updatePill();
+    renderPicks();
+    // The recent end is what you came for, so start there.
+    pickList.scrollTop = pickList.scrollHeight;
+  }
+  function closePicker(reopen) {
+    picker.classList.remove('show');
+    if (reopen) openSheet(); else updatePill();
+  }
+  $('pickClose').addEventListener('click', function () { closePicker(true); });
+  $('pickGo').addEventListener('click', function () {
+    var chosen = pickTurns.filter(function (_, i) { return picked[i]; });
+    saveExport(chosen.length ? chosen : null, pickScope(), pickExt, pickMime);
+    closePicker(false);
+  });
+
+  function saveExport(turns, scope, ext, mime) {
+    var content = ext === 'md' ? buildConversationMarkdown(turns, scope) : buildConversationText(turns, scope);
     if (!content) { toast('Nothing to export yet'); return; }
     var slug = titleSlug();
     var name = 'assay-' + (slug ? slug + '-' : '') + fileStamp() + '.' + ext;
-    var ok = download(name, content, mime);
-    if (!ok) { toast('Download blocked by the browser'); return; }
+    if (!download(name, content, mime)) { toast('Download blocked by the browser'); return; }
     toast(turns
-      ? 'Saved conversation' + (fragments.length ? ' + fragments' : '') + ' (.' + ext + ')'
-      : 'Transcript not found — saved fragments only (.' + ext + ')', 2400);
+      ? 'Saved ' + (scope || 'conversation') + (fragments.length ? ' + fragments' : '') + ' (.' + ext + ')'
+      : (IS_GITHUB ? 'Saved fragments (.' : 'Transcript not found — saved fragments only (.') + ext + ')', 2400);
+  }
+
+  function exportConversation(ext, mime) {
+    var turns = getConversation();
+    // One message (a file on GitHub) or none: there is nothing to choose.
+    if (!turns || turns.length < 2) { saveExport(turns, '', ext, mime); return; }
+    openPicker(turns, ext, mime);
   }
   $('mdBtn').addEventListener('click', function () { exportConversation('md', 'text/markdown'); });
   $('txtBtn').addEventListener('click', function () { exportConversation('txt', 'text/plain'); });
