@@ -120,13 +120,16 @@ jobs:
             echo "- **Firefox Add-ons** — skipped, no AMO secrets" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          echo "- **Firefox Add-ons** — submitted v$VERSION for review" >> "$GITHUB_STEP_SUMMARY"
           mkdir -p ext && unzip -q dist/assay-extension.zip -d ext
-          npx web-ext@8 sign --channel=listed \
-            --source-dir=ext \
-            --api-key="$AMO_JWT_ISSUER" \
-            --api-secret="$AMO_JWT_SECRET" \
-            --approval-timeout=0
+          if ! npx web-ext@8 sign --channel=listed \
+              --source-dir=ext \
+              --api-key="$AMO_JWT_ISSUER" \
+              --api-secret="$AMO_JWT_SECRET" \
+              --approval-timeout=0; then
+            echo "- **Firefox Add-ons** — FAILED for v$VERSION (see the job log)" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "- **Firefox Add-ons** — submitted v$VERSION for review" >> "$GITHUB_STEP_SUMMARY"
 
   publish-chrome:
     needs: [build, release]
@@ -154,9 +157,21 @@ jobs:
             echo "- **Chrome Web Store** — skipped, no CWS secrets" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          npx chrome-webstore-upload-cli@3 upload \
-            --source dist/assay-extension.zip \
-            --auto-publish
+          set -o pipefail
+          if ! npx chrome-webstore-upload-cli@3 upload \
+              --source dist/assay-extension.zip \
+              --auto-publish 2>&1 | tee cws.log; then
+            echo "- **Chrome Web Store** — FAILED for v$VERSION (see the job log)" >> "$GITHUB_STEP_SUMMARY"
+            # Google's OAuth errors are terse; say what each one means here.
+            if grep -q deleted_client cws.log; then
+              echo "::error title=Chrome Web Store::Google says the OAuth client behind CWS_CLIENT_ID no longer exists. Create a new Desktop-app client in the Cloud project, run 'npm run cws-token' with it, and replace all three CWS_* secrets — a refresh token is bound to its client."
+            elif grep -q invalid_grant cws.log; then
+              echo "::error title=Chrome Web Store::Google rejected the refresh token: expired or revoked. A consent screen left in Testing expires tokens after seven days — publish it, run 'npm run cws-token' again, and replace CWS_REFRESH_TOKEN."
+            elif grep -qi 'invalid_client\|unauthorized_client' cws.log; then
+              echo "::error title=Chrome Web Store::Google did not accept CWS_CLIENT_ID/CWS_CLIENT_SECRET as a pair. Check both against APIs & Services → Credentials."
+            fi
+            exit 1
+          fi
           echo "- **Chrome Web Store** — uploaded v$VERSION, publishing on review" >> "$GITHUB_STEP_SUMMARY"
 
   # Edge Add-ons, through Partner Center's Publish API v1.1: upload the package
