@@ -86,3 +86,8 @@ Append only. Never edit an entry after the fact.
   client behind the first attempt turned out to have been deleted. Same build
   again; a release is still the only way this session can make the pipeline
   run.
+- **2026-09-08** — the Chrome Web Store leg finally ran: "Publish successful"
+  on v0.12.3. It took three attempts and three number-only releases, each
+  refused differently — a deleted OAuth client, then a 403 on the upload from
+  a refresh token still bound to it. Every store now updates itself on merge
+  except Edge, which has no listing yet.
