@@ -30,7 +30,17 @@ on:
       - 'build.js'
       - 'install.template.html'
       - '.github/workflows/release.yml'
+  # Run by hand to re-send the current version to a store — the way to wire
+  # up a store after the release already exists, or to retry an upload that
+  # failed. It rebuilds from the chosen ref, so run it on the release's
+  # commit; the build is reproducible, so that is the released zip.
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Re-send the current version to a store'
+        type: choice
+        options: [none, chrome, firefox, edge, all]
+        default: none
 
 permissions:
   contents: write
@@ -89,7 +99,7 @@ jobs:
 
   publish-firefox:
     needs: [build, release]
-    if: needs.release.outputs.created == 'true'
+    if: needs.release.outputs.created == 'true' || contains(fromJSON('["firefox","all"]'), github.event.inputs.publish)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -120,7 +130,7 @@ jobs:
 
   publish-chrome:
     needs: [build, release]
-    if: needs.release.outputs.created == 'true'
+    if: needs.release.outputs.created == 'true' || contains(fromJSON('["chrome","all"]'), github.event.inputs.publish)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -156,7 +166,7 @@ jobs:
   # the API's own response.
   publish-edge:
     needs: [build, release]
-    if: needs.release.outputs.created == 'true'
+    if: needs.release.outputs.created == 'true' || contains(fromJSON('["edge","all"]'), github.event.inputs.publish)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
