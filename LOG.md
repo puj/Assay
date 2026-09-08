@@ -78,3 +78,7 @@ Append only. Never edit an entry after the fact.
   Last 6 and — the one that matters — ↓ on a message to take it and everything
   after. The file says what it holds, "messages 19–30 of 30", so a partial
   export can't be mistaken for the whole thread later.
+- **2026-09-08** — v0.12.1 exists to carry v0.12.0 to the Chrome Web Store:
+  the first release after the CWS secrets landed, and a workflow dispatch
+  cannot be fired from the build session. The same build; only the number
+  moved.
