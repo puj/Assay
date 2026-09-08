@@ -82,3 +82,7 @@ Append only. Never edit an entry after the fact.
   the first release after the CWS secrets landed, and a workflow dispatch
   cannot be fired from the build session. The same build; only the number
   moved.
+- **2026-09-08** — v0.12.2: the retry of the Chrome upload after the OAuth
+  client behind the first attempt turned out to have been deleted. Same build
+  again; a release is still the only way this session can make the pipeline
+  run.
