@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Assay: Deep Dive for AI Chats",
-  "version": "0.12.3",
+  "version": "0.13.0",
   "description": "Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive prompt. 100% local, no account.",
   "homepage_url": "https://www.projectnothing.ai",
   "icons": {
@@ -16,7 +16,8 @@
         "https://chatgpt.com/*",
         "https://chat.openai.com/*",
         "https://claude.ai/*",
-        "https://github.com/*"
+        "https://github.com/*",
+        "https://gist.github.com/*"
       ],
       "js": [
         "assay.js"

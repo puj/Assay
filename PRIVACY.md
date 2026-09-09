@@ -12,7 +12,8 @@ reaches us.
 ## What Assay reads
 
 Assay runs only on the pages it supports — chatgpt.com, chat.openai.com,
-claude.ai, and github.com, where it reads files the way it reads a reply.
+claude.ai, github.com and gist.github.com, where it reads files the way it
+reads a reply.
 On those pages it reads:
 
 - **the passage you tap or select**, so it can highlight and collect it;
@@ -44,7 +45,8 @@ is undoable — until the next clear or send replaces it.
 
 **Uninstalling the extension does not by itself erase this data**, because it
 belongs to the site's storage rather than to the extension. To erase it
-completely, clear site data for chatgpt.com, claude.ai and github.com in your browser
+completely, clear site data for chatgpt.com, claude.ai, github.com and
+gist.github.com in your browser
 settings.
 
 ## Third parties

@@ -91,3 +91,16 @@ Append only. Never edit an entry after the fact.
   refused differently — a deleted OAuth client, then a 403 on the upload from
   a refresh token still bound to it. Every store now updates itself on merge
   except Edge, which has no listing yet.
+- **2026-09-09** — Gist joins GitHub: gist.github.com reads files the same
+  way, tap grammar and all. Confirmed against a live gist's actual markup
+  (fetched and inspected directly) rather than guessing — its classic
+  table-based code view turned out to already match the selectors the newer
+  github.com blob view needed, so no new selector was required, just the
+  hostname check. A multi-file gist now exports each file as its own labeled
+  section (by its gist filename) and offers the picker to choose among them,
+  which also fixed a latent bug: exporting only ever took the first file on
+  a page with more than one match. Along the way, found and fixed a real
+  defect the gist markup exposed: a classic code table's line-number cell,
+  though empty, was leaking a tab character into every exported code line
+  via `innerText`'s cross-cell join — code exports now read each row's own
+  cell instead.

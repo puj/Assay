@@ -4,20 +4,23 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.12.3';
+  var VERSION = '0.13.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
   var MIN_SEL_LEN = 4;
-  // GitHub is a reading surface with no composer: the same tap grammar over a
-  // file's rendered markdown or its code lines, and the collected set is
-  // copied out rather than written into a message box.
-  var IS_GITHUB = location.hostname === 'github.com';
+  // GitHub and Gist are a reading surface with no composer: the same tap
+  // grammar over a file's rendered markdown or its code lines, and the
+  // collected set is copied out rather than written into a message box. A
+  // gist's classic table markup (<table class="js-file-line-container">,
+  // one <td> per line, an empty <td class="blob-num"> beside it) already
+  // matches the selectors github.com's newer blob view needed.
+  var IS_GITHUB = location.hostname === 'github.com' || location.hostname === 'gist.github.com';
   var GH_CONTENT = '.markdown-body,.react-code-lines,table.js-file-line-container,.blob-wrapper';
   var GH_CODE = '.react-code-lines,table.js-file-line-container,.blob-wrapper';
   var READ_NOUN = IS_GITHUB ? 'file' : 'reply';
   var BRAND = location.hostname === 'claude.ai' ? 'Claude'
-    : (location.hostname === 'github.com' ? 'File' : 'ChatGPT');
+    : (IS_GITHUB ? 'File' : 'ChatGPT');
 
   // Rotating highlight colors: pending selection previews the color the next
   // fragment will get; collected marks stay on the page in the same hue.
@@ -1544,11 +1547,27 @@
   // Light DOM→markdown for rendered chat messages: block structure only
   // (paragraphs, headings, lists, code fences, quotes); inline styling is
   // dropped. Robust beats faithful here.
+  // A classic GitHub code table (github.com's legacy view, and every gist —
+  // gist never got the newer react-code-lines markup) pairs an empty
+  // line-number <td> with a code <td> in each row. Reading the table's own
+  // innerText joins the two cells with a tab per row, which would land in
+  // every exported line; reading each row's own code cell instead avoids it.
+  function codeTableText(table) {
+    var rows = table.querySelectorAll('tr');
+    if (!rows.length) return null;
+    return Array.prototype.map.call(rows, function (tr) {
+      var cells = tr.querySelectorAll('td');
+      var cell = cells[cells.length - 1];
+      return cell ? cell.textContent.replace(/\n+$/, '') : '';
+    }).join('\n');
+  }
+
   function serializeBlocks(rootEl) {
     var out = [];
     // A code view is lines of text, not prose: keep it verbatim in a fence.
     if (rootEl.matches && rootEl.matches(GH_CODE)) {
-      var code = (rootEl.innerText || '').replace(/\s+$/, '');
+      var table = rootEl.tagName === 'TABLE' ? rootEl : rootEl.querySelector('table');
+      var code = ((table && codeTableText(table)) || rootEl.innerText || '').replace(/\s+$/, '');
       return code ? ['```\n' + code + '\n```'] : [];
     }
     function pushText(s) { if (s) out.push(s); }
@@ -1587,10 +1606,20 @@
 
   function getConversation() {
     if (IS_GITHUB) {
-      var el = document.querySelector(GH_CONTENT);
-      if (!el) return null;
+      // A gist can hold several files, each its own labeled section; a
+      // github.com blob page (or a one-file gist with no distinguishing
+      // name to find) is still the single path it always was.
+      var els = document.querySelectorAll(GH_CONTENT);
+      if (!els.length) return null;
       var path = decodeURIComponent(location.pathname.replace(/^\/|\/$/g, ''));
-      return [{ role: path || 'File', el: el }];
+      var multi = els.length > 1;
+      return Array.prototype.map.call(els, function (el, i) {
+        var fileEl = el.closest('.file');
+        var nameEl = fileEl && fileEl.querySelector('.gist-blob-name');
+        var name = nameEl && textOf(nameEl).trim();
+        var role = name || (multi ? path + ' — message ' + (i + 1) : path) || 'File';
+        return { role: role, el: el };
+      });
     }
     var nodes = document.querySelectorAll('[data-message-author-role]');
     if (nodes.length) {

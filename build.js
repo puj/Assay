@@ -37,6 +37,7 @@ const header = [
   '// @match        https://chat.openai.com/*',
   '// @match        https://claude.ai/*',
   '// @match        https://github.com/*',
+  '// @match        https://gist.github.com/*',
   '// @grant        none',
   '// @run-at       document-idle',
   '// ==/UserScript==',

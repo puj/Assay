@@ -79,8 +79,8 @@ same local storage, so you can switch between them without losing anything.
 | **Firefox for Android** (recommended on phones) | The store listing covers Android once approved. Today: install the userscript in [Tampermonkey](https://addons.mozilla.org/firefox/addon/tampermonkey/) or [Violentmonkey](https://addons.mozilla.org/firefox/addon/violentmonkey/) by opening **<https://assay.projectnothing.ai/assay.user.js>** and accepting. It auto-updates. Step by step at [assay.projectnothing.ai/install](https://assay.projectnothing.ai/install). |
 | **Chrome on Android, Safari, anything else** | The **bookmarklet**: open [assay.projectnothing.ai/install](https://assay.projectnothing.ai/install), add the bookmark it gives you, and tap it once per visit. Zero install, nothing to update. |
 
-Works on `chatgpt.com`, `chat.openai.com`, `claude.ai` and `github.com`.
-Firefox 121+ and any current Chromium browser.
+Works on `chatgpt.com`, `chat.openai.com`, `claude.ai`, `github.com` and
+`gist.github.com`. Firefox 121+ and any current Chromium browser.
 
 ## How it works
 
@@ -159,10 +159,11 @@ No. It is free, open source, and uses your existing ChatGPT or Claude session. T
 No. It has no backend and makes no network requests. The only thing that leaves your device is the message you review and send yourself.
 
 **Which sites does it support?**
-ChatGPT (`chatgpt.com`, `chat.openai.com`), Claude (`claude.ai`) and GitHub (`github.com`).
+ChatGPT (`chatgpt.com`, `chat.openai.com`), Claude (`claude.ai`), and GitHub
+(`github.com` and `gist.github.com`).
 
 **What does it do on GitHub?**
-The same thing, over a file instead of a reply: tap to collect passages from a file's rendered markdown or from its code lines, where each line is a paragraph and keeps its indentation. Every file keeps its own list, ⭳ .md exports the file with your fragments appended, and since there is no message box the primary action is ⧉ Copy notes.
+The same thing, over a file instead of a reply: tap to collect passages from a file's rendered markdown or from its code lines, where each line is a paragraph and keeps its indentation. Every file keeps its own list, ⭳ .md exports the file with your fragments appended, and since there is no message box the primary action is ⧉ Copy notes. A multi-file gist exports each file as its own section, named by its filename, and the picker lets you choose which files go in.
 
 **Where are my fragments stored?**
 In the site's `localStorage` on that device, one list per conversation — or per file, on GitHub. Switching from the userscript to the store extension keeps them, since the storage belongs to the site, not the extension.
