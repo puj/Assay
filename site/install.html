@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.14.1
+// @version      0.15.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -250,7 +250,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.14.1';
+  var VERSION = '0.15.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   // What the page has shown us of this conversation, remembered so an export
@@ -1975,15 +1975,17 @@
   // layouts, an inner pane on others.
   function scrollerFor(el) {
     var n = el && el.parentElement;
-    while (n && n !== document.body) {
-      if (n.scrollHeight > n.clientHeight + 20) {
-        var o = '';
-        try { o = window.getComputedStyle(n).overflowY; } catch (e) {}
-        if (o === 'auto' || o === 'scroll') return n;
-      }
+    while (n && n !== document.body && n !== document.documentElement) {
+      var o = '';
+      try { o = window.getComputedStyle(n).overflowY; } catch (e) {}
+      if (o === 'auto' || o === 'scroll' || o === 'overlay') return n;
       n = n.parentElement;
     }
-    return document.scrollingElement || document.documentElement;
+    var doc = document.scrollingElement || document.documentElement;
+    // Nothing we can recognise scrolls the conversation — some layouts move it
+    // themselves. Saying so is the point: a scroller we have not found must
+    // never be read as one sitting at the end of the thread.
+    return doc && doc.scrollHeight > doc.clientHeight + 20 ? doc : null;
   }
 
   // The messages the page is rendering right now, in order.
@@ -2013,23 +2015,51 @@
   // The window is a contiguous run of the real conversation, so a message we
   // have not seen before belongs next to whichever of its neighbours we do
   // know — after the one before it, or failing that before the one after.
+  // Two views of the same message: which one to keep. A message can be shown
+  // collapsed, truncated behind a "Show more", or still streaming — all of
+  // which render less of it than we may already hold. Less text is a narrower
+  // view of the message, not a newer version of it, so the fuller one stands.
+  function bestOf(oldRec, newRec) {
+    var a = (oldRec.b || []).join('\n'), b = (newRec.b || []).join('\n');
+    var keepOld = false;
+    if (b.length < a.length) {
+      var trimmed = b.replace(/[\s…\.]+$/, '');
+      var head = Math.min(200, trimmed.length);
+      // The same message opens the same way, whatever is hidden further down.
+      keepOld = !!trimmed && (a.indexOf(trimmed) === 0 ||
+        (head > 40 && a.slice(0, head) === trimmed.slice(0, head)));
+    }
+    if (!keepOld) return newRec;
+    // The fuller body, but the fresher idea of where it sits.
+    var out = { k: oldRec.k, role: newRec.role || oldRec.role, b: oldRec.b, len: oldRec.len, ts: oldRec.ts };
+    if (typeof newRec.n === 'number') out.n = newRec.n;
+    else if (typeof oldRec.n === 'number') out.n = oldRec.n;
+    return out;
+  }
+
   function mergeTurns(stored, scanned, ctx) {
     if (!scanned.length) return stored;
     if (!stored.length) return scanned.slice();
     ctx = ctx || {};
     var out = stored.slice(), i;
+
+    // Anything we have already seen of these messages is kept if it is fuller
+    // than what the page is showing now.
+    var held = {};
+    out.forEach(function (m) { held[m.k] = m; });
+    scanned = scanned.map(function (m) {
+      return held[m.k] ? bestOf(held[m.k], m) : m;
+    });
     var fresh = {};
     scanned.forEach(function (m) { fresh[m.k] = true; });
 
-    // What we remember can be out of date: a message edited, regenerated or
-    // deleted rewrites the conversation from that point, and the copy we kept
-    // of the old shape is then fiction. Wherever the page can tell us what is
-    // true now, it wins over what we hold.
-
-    // Where the site numbers its turns, a number the page just used for some
-    // other message means the one we held under it is gone.
-    var numbered = scanned.length && scanned.every(function (m) { return typeof m.n === 'number'; });
-    if (numbered) {
+    // What we remember can also be out of date: a message edited, regenerated
+    // or deleted rewrites the conversation from that point. Where the site
+    // numbers its turns, a number the page has just used for some other
+    // message is proof the one we held under it is gone. That is the only
+    // evidence strong enough to drop a message on — everywhere else, keeping
+    // something stale is the lesser mistake against losing something real.
+    if (scanned.every(function (m) { return typeof m.n === 'number'; })) {
       var lo = Infinity, hi = -Infinity;
       scanned.forEach(function (m) { lo = Math.min(lo, m.n); hi = Math.max(hi, m.n); });
       out = out.filter(function (m) {
@@ -2038,32 +2068,40 @@
       });
     }
 
-    // The window the page renders is a contiguous run of the conversation, so
-    // between the first and last message of it that we recognise, the page is
-    // the whole truth: that span becomes exactly what was just seen, which
-    // keeps the order right and drops anything that has since been removed.
+    // Fold the window in. Between the first and last message of it we
+    // recognise, the page decides the order; messages we hold in that stretch
+    // but did not just see keep their place rather than being thrown away.
     var first = -1, last = -1;
     for (i = 0; i < out.length; i++) {
       if (fresh[out[i].k]) { if (first < 0) first = i; last = i; }
-    }
-    var before = [], after = [];
-    for (i = 0; i < out.length; i++) {
-      if (fresh[out[i].k]) continue;              // the scan holds these now
-      if (first < 0) { before.push(out[i]); continue; }
-      if (i < first) before.push(out[i]);
-      else if (i > last) after.push(out[i]);      // inside the span: stale
     }
     if (first < 0) {
       // Nothing in common — a scroll fast enough that the page swapped the
       // whole window. Which side it belongs on is what the scroller was
       // doing; conversations otherwise grow at the end.
-      out = ctx.earlier ? scanned.concat(before) : before.concat(scanned);
+      out = ctx.earlier ? scanned.concat(out) : out.concat(scanned);
     } else {
-      out = before.concat(scanned, after);
-      // Standing at the end of the conversation, there is nothing after the
-      // last message on screen — so anything we still hold past it belongs to
-      // a version of this thread that no longer exists. (Only when the scan
-      // overlapped what we hold, so a misjudged window cannot erase a thread.)
+      var span = out.slice(first, last + 1), spanOut = [], posIn = {}, cursor = 0;
+      span.forEach(function (m, j) { if (posIn[m.k] === undefined) posIn[m.k] = j; });
+      scanned.forEach(function (m) {
+        var at = posIn[m.k];
+        if (at === undefined) { spanOut.push(m); return; }
+        while (cursor < at) {
+          var kept = span[cursor++];
+          if (!fresh[kept.k]) spanOut.push(kept);
+        }
+        if (cursor <= at) cursor = at + 1;
+        spanOut.push(m);
+      });
+      while (cursor < span.length) {
+        var rest = span[cursor++];
+        if (!fresh[rest.k]) spanOut.push(rest);
+      }
+      out = out.slice(0, first).concat(spanOut, out.slice(last + 1));
+
+      // Standing at the end of the conversation, nothing can lie beyond the
+      // last message on screen, so anything still held past it belongs to a
+      // version of this thread that no longer exists.
       if (ctx.atBottom) {
         var tail = scanned[scanned.length - 1].k;
         for (i = 0; i < out.length; i++) {
@@ -2072,8 +2110,7 @@
       }
     }
 
-    // Where the site numbers its turns, that number is the last word on
-    // order — anything above it can only have been a guess.
+    // Where the site numbers its turns, that number is the last word on order.
     if (out.length && out.every(function (m) { return typeof m.n === 'number'; })) {
       out = out.slice().sort(function (a, b) { return a.n - b.n; });
     }
@@ -2111,13 +2148,16 @@
     // shares nothing with what we already hold.
     var scroller = scrollerFor(live[0].el);
     var y = scroller ? scroller.scrollTop : 0;
-    var earlier = lastScanY !== null && y < lastScanY;
-    lastScanY = y;
-    // Standing at the end of the thread (or seeing all of it at once, with
-    // nothing to scroll) means the last message on screen is the last there is.
-    var atBottom = !scroller ||
+    var earlier = !!scroller && lastScanY !== null && y < lastScanY;
+    lastScanY = scroller ? y : null;
+    // Standing at the end of the thread — or seeing all of it at once inside
+    // something that would scroll if there were more — means the last message
+    // on screen is the last there is. Without a scroller we know nothing, and
+    // knowing nothing must never be mistaken for standing at the end.
+    var atBottom = !!scroller && (
       scroller.scrollHeight <= scroller.clientHeight + 4 ||
-      y + scroller.clientHeight >= scroller.scrollHeight - 80;
+      y + scroller.clientHeight >= scroller.scrollHeight - 80
+    );
     var merged = mergeTurns(logMsgs, scanned, { earlier: earlier, atBottom: atBottom });
     if (changed || merged.length !== logMsgs.length) {
       logMsgs = merged;
@@ -2127,10 +2167,16 @@
     }
   }
 
-  // What a turn's body is, whether it is on the page or only remembered.
+  // What a turn's body is, whether it is on the page or only remembered — and
+  // when it is both, whichever of the two holds more of the message. A
+  // message on screen can be the collapsed version of one we already have in
+  // full, and being on screen does not make it the better copy.
   function turnBlocks(t) {
-    if (t.el && t.el.isConnected) return serializeBlocks(t.el);
-    return (t.b || []).slice();
+    var remembered = t.b || [];
+    if (!(t.el && t.el.isConnected)) return remembered.slice();
+    var liveB = serializeBlocks(t.el);
+    if (!remembered.length) return liveB;
+    return bestOf({ k: '', role: t.role, b: remembered }, { k: '', role: t.role, b: liveB }).b.slice();
   }
 
   function getConversation() {

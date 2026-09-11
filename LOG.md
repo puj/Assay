@@ -138,3 +138,18 @@ Append only. Never edit an entry after the fact.
   queue clears. AMO returned a bare 502, so the Firefox leg now retries three
   times — treating "version already exists" as the success it is, since a
   retry after the upload actually landed is not a failure.
+- **2026-09-11** — the memory was losing the conversation it was meant to
+  keep, and the cause was mine: a scroller we could not identify fell back to
+  the document, which on a page that scrolls an inner pane does not scroll at
+  all — so "are we at the end of the thread?" answered yes on every scan, and
+  every scan cut everything after the last message on screen. Scrolling back
+  through a thread therefore held six messages no matter how far you went.
+  Not finding a scroller now means knowing nothing, which is never read as
+  standing at the end. Two more of the same family: a shorter view of a
+  message no longer replaces a fuller one we already hold — collapsed,
+  truncated behind Show more, or still streaming are narrower views of a
+  message, not newer versions of it — and that rule applies at export too,
+  where being on screen had been mistaken for being the better copy. And a
+  message we hold but did not just see is no longer dropped for being absent;
+  only a reused turn number or the visible end of the thread is evidence
+  enough, because losing a real message is worse than keeping a stale one.
