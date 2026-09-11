@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.14.0';
+  var VERSION = '0.14.1';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   // What the page has shown us of this conversation, remembered so an export
@@ -1767,57 +1767,77 @@
   // The window is a contiguous run of the real conversation, so a message we
   // have not seen before belongs next to whichever of its neighbours we do
   // know — after the one before it, or failing that before the one after.
-  function mergeTurns(stored, scanned, earlier) {
+  function mergeTurns(stored, scanned, ctx) {
     if (!scanned.length) return stored;
     if (!stored.length) return scanned.slice();
-    var idx = {}, i;
-    for (i = 0; i < stored.length; i++) idx[stored[i].k] = i;
-    var anyKnown = scanned.some(function (m) { return idx[m.k] !== undefined; });
-    var out = stored.slice();
-    if (!anyKnown) {
+    ctx = ctx || {};
+    var out = stored.slice(), i;
+    var fresh = {};
+    scanned.forEach(function (m) { fresh[m.k] = true; });
+
+    // What we remember can be out of date: a message edited, regenerated or
+    // deleted rewrites the conversation from that point, and the copy we kept
+    // of the old shape is then fiction. Wherever the page can tell us what is
+    // true now, it wins over what we hold.
+
+    // Where the site numbers its turns, a number the page just used for some
+    // other message means the one we held under it is gone.
+    var numbered = scanned.length && scanned.every(function (m) { return typeof m.n === 'number'; });
+    if (numbered) {
+      var lo = Infinity, hi = -Infinity;
+      scanned.forEach(function (m) { lo = Math.min(lo, m.n); hi = Math.max(hi, m.n); });
+      out = out.filter(function (m) {
+        if (fresh[m.k]) return true;
+        return !(typeof m.n === 'number' && m.n >= lo && m.n <= hi);
+      });
+    }
+
+    // The window the page renders is a contiguous run of the conversation, so
+    // between the first and last message of it that we recognise, the page is
+    // the whole truth: that span becomes exactly what was just seen, which
+    // keeps the order right and drops anything that has since been removed.
+    var first = -1, last = -1;
+    for (i = 0; i < out.length; i++) {
+      if (fresh[out[i].k]) { if (first < 0) first = i; last = i; }
+    }
+    var before = [], after = [];
+    for (i = 0; i < out.length; i++) {
+      if (fresh[out[i].k]) continue;              // the scan holds these now
+      if (first < 0) { before.push(out[i]); continue; }
+      if (i < first) before.push(out[i]);
+      else if (i > last) after.push(out[i]);      // inside the span: stale
+    }
+    if (first < 0) {
       // Nothing in common — a scroll fast enough that the page swapped the
       // whole window. Which side it belongs on is what the scroller was
       // doing; conversations otherwise grow at the end.
-      return earlier ? scanned.concat(out) : out.concat(scanned);
-    }
-    var reindex = function (from) {
-      for (var j = from; j < out.length; j++) idx[out[j].k] = j;
-    };
-    // Where the leading unknowns go: just before the first message we know.
-    var head = -1;
-    for (i = 0; i < scanned.length; i++) {
-      if (idx[scanned[i].k] !== undefined) { head = idx[scanned[i].k]; break; }
-    }
-    var at = head, leading = true;
-    scanned.forEach(function (m) {
-      var known = idx[m.k];
-      if (known !== undefined) {
-        out[known] = m;
-        at = known;
-        leading = false;
-        return;
+      out = ctx.earlier ? scanned.concat(before) : before.concat(scanned);
+    } else {
+      out = before.concat(scanned, after);
+      // Standing at the end of the conversation, there is nothing after the
+      // last message on screen — so anything we still hold past it belongs to
+      // a version of this thread that no longer exists. (Only when the scan
+      // overlapped what we hold, so a misjudged window cannot erase a thread.)
+      if (ctx.atBottom) {
+        var tail = scanned[scanned.length - 1].k;
+        for (i = 0; i < out.length; i++) {
+          if (out[i].k === tail) { out = out.slice(0, i + 1); break; }
+        }
       }
-      // Before the first message we recognise, a new one goes in front of it —
-      // that is what scrolling up into older messages looks like. After it,
-      // each follows the one before.
-      var pos;
-      if (leading) {
-        pos = head < 0 ? out.length : head;
-        head = pos + 1;
-      } else {
-        pos = at + 1;
-      }
-      out.splice(pos, 0, m);
-      reindex(pos);
-      at = pos;
-    });
+    }
+
     // Where the site numbers its turns, that number is the last word on
-    // order — a guess above can only have been a guess.
-    var numbered = out.every(function (m) { return typeof m.n === 'number'; });
-    if (numbered) {
+    // order — anything above it can only have been a guess.
+    if (out.length && out.every(function (m) { return typeof m.n === 'number'; })) {
       out = out.slice().sort(function (a, b) { return a.n - b.n; });
     }
-    return out;
+    // A key can only stand once, however it got here.
+    var seen = {};
+    return out.filter(function (m) {
+      if (seen[m.k]) return false;
+      seen[m.k] = true;
+      return true;
+    });
   }
 
   // Read the page and remember it. Serialising every visible message on every
@@ -1847,7 +1867,12 @@
     var y = scroller ? scroller.scrollTop : 0;
     var earlier = lastScanY !== null && y < lastScanY;
     lastScanY = y;
-    var merged = mergeTurns(logMsgs, scanned, earlier);
+    // Standing at the end of the thread (or seeing all of it at once, with
+    // nothing to scroll) means the last message on screen is the last there is.
+    var atBottom = !scroller ||
+      scroller.scrollHeight <= scroller.clientHeight + 4 ||
+      y + scroller.clientHeight >= scroller.scrollHeight - 80;
+    var merged = mergeTurns(logMsgs, scanned, { earlier: earlier, atBottom: atBottom });
     if (changed || merged.length !== logMsgs.length) {
       logMsgs = merged;
       saveLog(force);

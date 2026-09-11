@@ -61,7 +61,7 @@ Assay gives that step an interface. While you read a reply on
 - **↗ To composer** writes your fragments and notes into the site's own message box. Nothing is auto-sent; you review, then send.
 - **On GitHub**, where there is no message box, the same tray offers **⧉ Copy notes** instead: the set goes to the clipboard and stays in the tray.
 - **⭳ .md / ⭳ .txt** export the conversation as Markdown or plain text with your fragments appended, named after the chat: `assay-<chat title>-<date>-<time>.md`. A picker lets you choose which messages go in — each row shows who spoke and enough of the message to recognise it, and **↓** takes one message and everything after it, which is usually what you want.
-- **The whole thread, not just what's on screen.** Both sites render only a window of a long conversation. Assay remembers the messages as the page shows them, so an export isn't limited to the handful currently loaded — and the picker tells you, per message, how much was captured and whether it came from the page or from memory.
+- **The whole thread, not just what's on screen.** Both sites render only a window of a long conversation. Assay remembers the messages as the page shows them, so an export isn't limited to the handful currently loaded — and the picker tells you, per message, how much was captured and whether it came from the page or from memory. What's remembered defers to the page: where the two disagree the live conversation wins, so an edited, regenerated or branched thread doesn't leave stale messages in the file.
 - **Every conversation keeps its own list**, so a batch started in one thread never bleeds into another.
 
 No wrapper prompt is added to what you send. Your selection is the signal and

@@ -34,7 +34,9 @@ It reads nothing on any other website, and it does not run anywhere else.
   same local storage, so ⭳ .md and ⭳ .txt can export the whole thread. You
   can see exactly what is held, message by message, in the picker that opens
   when you export — tap a message's size to read it. It is capped, and the
-  least recently opened conversations are dropped first.
+  least recently opened conversations are dropped first. Messages the
+  conversation no longer contains — edited, regenerated or deleted away — are
+  dropped as soon as the page shows that they are gone.
 - **The composed prompt**, into that site's own message box, when you press
   ↗ To composer. Nothing is ever sent for you — you review it and press send.
 - **A copy of that text to your clipboard**, when you press ⧉ Copy notes on a

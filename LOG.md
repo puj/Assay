@@ -117,3 +117,17 @@ Append only. Never edit an entry after the fact.
   element whenever a message is still on the page. The picker now shows, per
   message, how much was captured and whether it came from the page or from
   memory, and tapping that size opens the captured text to check it.
+- **2026-09-11** — the remembered thread now defers to the page. Accumulating
+  was the easy half; the other half is that what we hold can be fiction —
+  editing a message regenerates everything after it, and the copy kept from
+  before that describes a conversation which no longer exists. So the window
+  the page renders is treated as the whole truth for the span it covers:
+  between the first and last message of it we recognise, the log becomes
+  exactly what was just seen, which fixes the order and drops what has gone.
+  Where a site numbers its turns, a number reused for a different message
+  retires the one held under it. And at the end of the thread — where nothing
+  can lie beyond the last message on screen — anything still held past it is
+  cut, though only when the scan overlapped what we already had, so a
+  misjudged window can never erase a conversation. Away from the bottom
+  nothing is trimmed: the page may simply not have loaded the rest yet, and
+  losing remembered messages would be the worse failure.
