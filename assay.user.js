@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.16.0
+// @version      0.16.1
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.16.0';
+  var VERSION = '0.16.1';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   // What the page has shown us of this conversation, remembered so an export
@@ -1278,24 +1278,59 @@
   setInterval(maybeReanchor, 1200);
 
   // Catch messages as they arrive: while one streams, when older ones load on
-  // scroll, and when a collapsed one is opened. Scrolling is the case that
-  // has to keep up — a fast scroll through an old thread swaps the window
-  // several times a second, and a plain debounce would wait for the scrolling
-  // to stop and miss everything in between. So each trigger also says how
-  // long it is willing to go without a scan at all. A scan of a window we
-  // already know costs well under a millisecond, which is what makes this
-  // affordable.
-  var scanTimer = null, lastScanAt = 0;
+  // scroll, and when a collapsed one is opened. Two rules keep this from
+  // being felt. Nothing is scanned unless the conversation itself changed —
+  // typing into the message box changes the page constantly and changes the
+  // conversation not at all — and a scan never runs inside the handler that
+  // noticed the change: it waits for the browser to have a moment, so it can
+  // never land in the middle of a keystroke.
+  var scanTimer = null, idleHandle = 0, lastScanAt = 0, domDirty = true, scanCount = 0;
   function runScan() {
     clearTimeout(scanTimer);
     scanTimer = null;
+    idleHandle = 0;
     lastScanAt = Date.now();
+    domDirty = false;
+    scanCount++;
     try { scanTranscript(false); } catch (e) {}
   }
+  function scanWhenIdle() {
+    if (idleHandle) return;
+    if (window.requestIdleCallback) {
+      idleHandle = window.requestIdleCallback(runScan, { timeout: 1200 });
+    } else {
+      idleHandle = 1;
+      setTimeout(runScan, 80);
+    }
+  }
+  // `wait` is how long to let changes settle; `maxWait` is how long the scan
+  // is willing to be put off while they keep coming — a fast scroll swaps the
+  // window several times a second and a plain debounce would wait for the
+  // scrolling to stop and miss everything in between.
   function scanSoon(wait, maxWait) {
-    if (maxWait && Date.now() - lastScanAt >= maxWait) return runScan();
+    if (!domDirty) return;
+    if (maxWait && Date.now() - lastScanAt >= maxWait) return scanWhenIdle();
     if (scanTimer) return;
-    scanTimer = setTimeout(runScan, wait);
+    scanTimer = setTimeout(scanWhenIdle, wait);
+  }
+  // Did this change touch the conversation, or only the box you are typing in?
+  // And if it did: were messages added or taken away, or did existing text
+  // merely change? Nodes arriving is the conversation loading more of itself,
+  // which must not be missed; text changing is a message streaming, which can
+  // wait, since it will still be there when it finishes.
+  function conversationChange(records) {
+    var kind = 0;
+    for (var i = 0; i < records.length; i++) {
+      var t = records[i].target;
+      var el = t && (t.nodeType === 1 ? t : t.parentElement);
+      if (!el || el === host || host.contains(el)) continue;
+      var ed = el.closest && el.closest(EDITABLE_SEL);
+      if (ed && !host.contains(ed)) continue;   // somewhere text is being written
+      if (records[i].type === 'childList' &&
+          (records[i].addedNodes.length || records[i].removedNodes.length)) return 2;
+      kind = 1;
+    }
+    return kind;
   }
   if (!IS_GITHUB) {
     // Whatever is pending goes to storage before the page can be taken away.
@@ -1304,12 +1339,21 @@
       if (document.visibilityState === 'hidden' && logDirty) saveLog(true);
     });
     try {
-      new MutationObserver(function () { scanSoon(700, 2000); }).observe(document.body, {
-        childList: true, subtree: true, characterData: true
-      });
+      new MutationObserver(function (records) {
+        var kind = conversationChange(records);
+        if (!kind) return;
+        domDirty = true;
+        if (kind === 2) scanSoon(250, 700);   // messages came or went
+        else scanSoon(700, 2000);             // one of them is still writing
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
     } catch (e) {}
-    window.addEventListener('scroll', function () { scanSoon(200, 400); }, true);
-    setInterval(function () { if (Date.now() - lastScanAt > 2000) runScan(); }, 4000);
+    window.addEventListener('scroll', function (e) {
+      if (e.target === host || (e.target && e.target.nodeType === 1 && host.contains(e.target))) return;
+      scanSoon(200, 400);
+    }, true);
+    setInterval(function () {
+      if (domDirty && Date.now() - lastScanAt > 2000) scanWhenIdle();
+    }, 4000);
     setTimeout(runScan, 1000);
   }
   setTimeout(maybeReanchor, 400);
@@ -1756,6 +1800,9 @@
   }
   function normText(t) { return (t || '').replace(/\s+/g, ' ').trim(); }
   var HEAD_LEN = 200;   // enough of an opening to tell two messages apart
+  var textCache = (typeof WeakMap === 'function') ? new WeakMap() : {
+    get: function () {}, set: function () {}   // no cache, just slower
+  };
   var ANCHOR_MIN = 40;  // shorter than this, a message is too common to trust
 
   // Where the messages are. Each site is tried in turn, and the first that
@@ -1787,15 +1834,23 @@
       return !host.contains(el);
     });
     return found.map(function (el) {
-      var norm = normText(el.innerText || '');
+      // innerText is what the page actually shows, which is the whole point —
+      // but asking for it forces the browser to lay the page out, and on a
+      // long thread that is the one genuinely expensive thing here. So it is
+      // asked only when the element's own text has changed, which textContent
+      // answers without any layout at all.
+      var tl = (el.textContent || '').length, kids = el.childElementCount;
+      var seen = textCache.get(el);
+      if (!seen || seen.tl !== tl || seen.kids !== kids) {
+        var norm = normText(el.innerText || '');
+        seen = { tl: tl, kids: kids, h: hashOf(norm), head: norm.slice(0, HEAD_LEN), len: norm.length };
+        textCache.set(el, seen);
+      }
       return {
         el: el,
         role: finder.user(el) ? 'You' : 'Assistant',
         id: (el.getAttribute && el.getAttribute('data-message-id')) || '',
-        norm: norm,
-        h: hashOf(norm),
-        head: norm.slice(0, HEAD_LEN),
-        len: norm.length
+        h: seen.h, head: seen.head, len: seen.len
       };
     });
   }
@@ -2531,6 +2586,7 @@
     toggle: toggleSheet,
     version: VERSION,
     _scan: function () { scanTranscript(false); },
+    _scans: function () { return scanCount; },
     _debug: function () {
       return {
         pending: pending ? { start: pending.start, end: pending.end, scope: pending.scope, text: pendingText() } : null,

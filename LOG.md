@@ -175,3 +175,19 @@ Append only. Never edit an entry after the fact.
   scan of a window we already know costs under a millisecond on a
   200-message thread. The picker follows the page while it is open. The pill
   says Assay.
+- **2026-09-12** — typing had become expensive, and the reason was that
+  Assay treated a keystroke as news. Every character typed into the message
+  box mutated the page, the observer counted that as the conversation
+  changing, and every couple of seconds it ran a full scan — synchronously,
+  inside the very handler that noticed the keystroke, and the scan asks each
+  visible message for its innerText, which forces the browser to lay the page
+  out. So the cost landed in the middle of a keypress on the longest thread.
+  Three changes. A change inside any box being written in is no longer a
+  reason to scan at all. A scan is never run by the handler that noticed the
+  change: it waits for the browser to have an idle moment (or a second, if it
+  never does). And innerText is asked for only when an element's own text has
+  changed, which textContent answers without any layout — so a scan of a
+  window already known touches nothing. Nodes arriving or leaving still scans
+  promptly, since that is the conversation loading more of itself, and
+  streaming text waits, since it will still be there when it stops. Typing
+  120 characters into a 120-message thread now causes no scan whatsoever.
