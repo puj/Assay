@@ -61,6 +61,8 @@ non-affiliation line.
 > - ⭳ Export the conversation as Markdown or plain text, your fragments and
 >   notes appended — a verbatim local record, named after the chat. Choose
 >   which messages go in: tap ↓ on one to take it and everything after
+> - Long threads export whole: messages are remembered as the page shows them,
+>   so the file is not limited to the few still on screen
 > - Every conversation keeps its own list
 >
 > **Private by design**
@@ -96,8 +98,11 @@ ChatGPT companion, Claude companion
   these pages to do the only thing the extension does. It reads the passage
   the user taps or selects so it can highlight and collect it, and reads the
   visible conversation — or, on github.com/gist.github.com, the file(s) being
-  viewed — at the moment the user presses the export button so it can build
-  the requested .md/.txt file. It writes the composed text into the
+  viewed — so it can build the requested .md/.txt file. Because both chat
+  sites render only part of a long conversation at a time, it keeps a copy of
+  the messages the page has already displayed in that site's own local
+  storage, so an export is the whole thread rather than the portion on screen;
+  this copy never leaves the device. It writes the composed text into the
   page's own message box on request. Nothing is transmitted anywhere: the
   extension makes no network requests, and all state is kept in the site's
   local storage on the user's device.

@@ -61,6 +61,7 @@ Assay gives that step an interface. While you read a reply on
 - **↗ To composer** writes your fragments and notes into the site's own message box. Nothing is auto-sent; you review, then send.
 - **On GitHub**, where there is no message box, the same tray offers **⧉ Copy notes** instead: the set goes to the clipboard and stays in the tray.
 - **⭳ .md / ⭳ .txt** export the conversation as Markdown or plain text with your fragments appended, named after the chat: `assay-<chat title>-<date>-<time>.md`. A picker lets you choose which messages go in — each row shows who spoke and enough of the message to recognise it, and **↓** takes one message and everything after it, which is usually what you want.
+- **The whole thread, not just what's on screen.** Both sites render only a window of a long conversation. Assay remembers the messages as the page shows them, so an export isn't limited to the handful currently loaded — and the picker tells you, per message, how much was captured and whether it came from the page or from memory.
 - **Every conversation keeps its own list**, so a batch started in one thread never bleeds into another.
 
 No wrapper prompt is added to what you send. Your selection is the signal and
@@ -173,6 +174,9 @@ Yes. ⭳ .md saves the conversation, roles, text and code blocks, with your frag
 
 **Can I export only part of a conversation?**
 Yes. ⭳ .md and ⭳ .txt open a picker listing every message with its author and a preview. Take all of them, use All / None / Last 2 / Last 6, tap rows individually, or tap **↓** on a message to take it and everything after it. The file records what it holds — "messages 19–30 of 30" — so a partial export is never mistaken for the whole thread.
+
+**Why did an export miss messages before, and what changed?**
+Both sites load a long conversation in pieces: older messages appear only as you scroll to them, and some sections stay collapsed until opened. An export could only ever see what was rendered. Assay now remembers each message as the page shows it — locally, in the site's own storage — and exports from that. Scroll through a thread once, or just carry on using it, and the export has all of it. In the picker, each row shows how many characters were captured and whether it is on screen or remembered; tap that to read exactly what is held.
 
 **Does it auto-send anything?**
 Never. ↗ To composer only fills the message box.

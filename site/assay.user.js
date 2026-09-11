@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.13.0
+// @version      0.14.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,9 +24,15 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.13.0';
+  var VERSION = '0.14.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
+  // What the page has shown us of this conversation, remembered so an export
+  // is not limited to whatever happens to be rendered at the time.
+  var LOG_MAP_KEY = 'assay.convoLog.v1';
+  var LOG_MAX_MSGS = 500;        // per conversation
+  var LOG_MAX_CONVOS = 12;       // least recently seen is dropped first
+  var LOG_MAX_CHARS = 900000;    // rough ceiling before localStorage complains
   var LEGACY_KEY = 'deepdive.fragments.v1';
   var MIN_SEL_LEN = 4;
   // GitHub and Gist are a reading surface with no composer: the same tap
@@ -222,6 +228,12 @@
       'font-size:13px;line-height:1.4;color:#334155;margin-top:2px}' +
     '.pick .from{flex:none;width:38px;border-radius:12px;background:#e2e8f0;color:#475569;' +
       'font-size:15px;font-weight:700;touch-action:manipulation}' +
+    '.pick .meta{display:block;margin-top:6px;padding:3px 8px;border-radius:999px;background:#f1f5f9;' +
+      'color:#64748b;font-size:11px;font-weight:600;touch-action:manipulation}' +
+    '.pick .meta.open{background:#0284c7;color:#fff}' +
+    '.pick .full{margin:8px 0 0;padding:8px 10px;max-height:40vh;overflow:auto;background:#f8fafc;' +
+      'border:1px solid #e2e8f0;border-radius:8px;font:12px/1.5 ui-monospace,monospace;color:#334155;' +
+      'white-space:pre-wrap;word-break:break-word;-webkit-overflow-scrolling:touch}' +
     '.empty{padding:26px 10px;text-align:center;color:#64748b;font-size:14px;line-height:1.6}' +
     '.empty .restore{color:#0284c7;font-weight:600;text-decoration:underline;font-size:14px}' +
     '.actions{display:flex;gap:10px;padding:10px 14px 0}' +
@@ -252,6 +264,9 @@
       '.pick .row.on{background:#0c4a6e;border-color:#38bdf8}' +
       '.pick .prev{color:#cbd5e1}' +
       '.pick .from{background:#334155;color:#cbd5e1}' +
+      '.pick .meta{background:#334155;color:#94a3b8}' +
+      '.pick .meta.open{background:#38bdf8;color:#0c1220}' +
+      '.pick .full{background:#0f172a;border-color:#334155;color:#cbd5e1}' +
       '.sheet .hint{color:#94a3b8}' +
     '}' +
     '</style>' +
@@ -293,7 +308,7 @@
     '<div class="sheet" id="picker">' +
       '<header><h2 id="pickTitle">Include in the file</h2>' +
         '<button class="close" id="pickClose">&#x2715;</button></header>' +
-      '<p class="hint">Tap &#x2193; on a message to take it and everything after it.</p>' +
+      '<p class="hint" id="pickHint">Tap &#x2193; on a message to take it and everything after it.</p>' +
       '<div class="picks" id="pickList"></div>' +
       '<div class="actions">' +
         '<button class="btn minor" id="pickAll">All</button>' +
@@ -340,6 +355,7 @@
       saveMap(MAP_KEY, map);
     }
     fragments = normalize(list);
+    loadLog();
     anchorSig = '';
     updatePill();
     redraw();
@@ -1259,6 +1275,31 @@
     if (reanchorMarks()) redraw();
   }
   setInterval(maybeReanchor, 1200);
+
+  // Catch messages as they arrive: while one streams, when older ones load on
+  // scroll, and when a collapsed one is opened. The observer is debounced
+  // because streaming fires constantly, and the interval is the backstop for
+  // anything the observer misses.
+  var scanTimer = null;
+  function scanSoon(ms) {
+    clearTimeout(scanTimer);
+    scanTimer = setTimeout(function () { try { scanTranscript(false); } catch (e) {} }, ms || 800);
+  }
+  if (!IS_GITHUB) {
+    // Whatever is pending goes to storage before the page can be taken away.
+    window.addEventListener('pagehide', function () { if (logDirty) saveLog(true); });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden' && logDirty) saveLog(true);
+    });
+    try {
+      new MutationObserver(function () { scanSoon(800); }).observe(document.body, {
+        childList: true, subtree: true, characterData: true
+      });
+    } catch (e) {}
+    window.addEventListener('scroll', function () { scanSoon(600); }, true);
+    setInterval(function () { scanSoon(0); }, 5000);
+    setTimeout(function () { scanSoon(0); }, 1200);
+  }
   setTimeout(maybeReanchor, 400);
 
   var redrawScheduled = false;
@@ -1364,6 +1405,7 @@
   // still collect while it's open, and the pill rides above it as a toggle.
   function openSheet() {
     sheetOpen = true;
+    try { scanTranscript(false); } catch (e) {}
     hideChip();
     clearPending();
     renderList();
@@ -1624,6 +1666,222 @@
     return out;
   }
 
+  // ------------------------------------------------- remembering the thread
+  // Both sites render only a window of a long conversation: messages load as
+  // you scroll and some stay collapsed until opened. Whatever the page has
+  // shown us is kept here, so ⭳ .md exports the thread rather than the part
+  // of it that happens to be on screen. Nothing is fetched to build this —
+  // it is only ever what the page itself rendered.
+  var logMsgs = [];        // [{k, role, b: [blocks], len, ts}]
+  var logDirty = false;
+  var lastLogSave = 0;
+  var lastScanY = null;
+  var logTimer = null;
+
+  function loadLog() {
+    var entry = loadJSON(LOG_MAP_KEY, {})[convo];
+    logMsgs = (entry && entry.msgs) || [];
+    logDirty = false;
+    lastScanY = null;
+  }
+
+  function saveLog(force) {
+    if (!logMsgs.length) return;
+    var now = Date.now();
+    // Streaming fires constantly; write at most every couple of seconds
+    // unless the caller needs it on disk now. A deferred write is scheduled
+    // rather than left to whenever something next happens to scan.
+    if (!force && now - lastLogSave < 2000) {
+      logDirty = true;
+      clearTimeout(logTimer);
+      logTimer = setTimeout(function () { if (logDirty) saveLog(true); }, 2000 - (now - lastLogSave));
+      return;
+    }
+    clearTimeout(logTimer);
+    lastLogSave = now;
+    logDirty = false;
+    var map = loadJSON(LOG_MAP_KEY, {});
+    map[convo] = { ts: now, msgs: logMsgs.slice(-LOG_MAX_MSGS) };
+    // Keep the store small enough that it never crowds out the fragments,
+    // which matter more: drop whole conversations, least recently seen first.
+    var keys = Object.keys(map);
+    keys.sort(function (a, b) { return (map[b].ts || 0) - (map[a].ts || 0); });
+    var kept = {}, chars = 0;
+    keys.forEach(function (k, i) {
+      if (i >= LOG_MAX_CONVOS) return;
+      var size = JSON.stringify(map[k]).length;
+      if (chars + size > LOG_MAX_CHARS && k !== convo) return;
+      chars += size;
+      kept[k] = map[k];
+    });
+    saveMap(LOG_MAP_KEY, kept);
+  }
+
+  // A message keeps the same key across re-renders so it can be recognised
+  // when it scrolls back into view. ChatGPT gives every message an id;
+  // elsewhere the opening of the text serves, since streaming appends to a
+  // message but never rewrites what it already wrote.
+  function turnKey(el, role, text, seen) {
+    var id = el.getAttribute && el.getAttribute('data-message-id');
+    var k = id ? 'i:' + id
+      : 'f:' + role.charAt(0) + ':' + (text || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    // Two messages can open with the same words; number the repeats so they
+    // stay distinct in the order they appear.
+    if (seen) {
+      var n = (seen[k] || 0) + 1;
+      seen[k] = n;
+      if (n > 1) k += '#' + n;
+    }
+    return k;
+  }
+
+  // ChatGPT numbers every turn in the DOM, which settles the order of
+  // anything we have seen no matter how it was scrolled. Nothing else does,
+  // so elsewhere we fall back to where the scroller was.
+  function turnOrdinal(el) {
+    var a = el.closest && el.closest('[data-testid^="conversation-turn-"]');
+    if (!a) return null;
+    var m = /conversation-turn-(\d+)/.exec(a.getAttribute('data-testid') || '');
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  // The element that actually scrolls the conversation: the window on some
+  // layouts, an inner pane on others.
+  function scrollerFor(el) {
+    var n = el && el.parentElement;
+    while (n && n !== document.body) {
+      if (n.scrollHeight > n.clientHeight + 20) {
+        var o = '';
+        try { o = window.getComputedStyle(n).overflowY; } catch (e) {}
+        if (o === 'auto' || o === 'scroll') return n;
+      }
+      n = n.parentElement;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  // The messages the page is rendering right now, in order.
+  function liveTurns() {
+    var nodes = document.querySelectorAll('[data-message-author-role]');
+    var out = [];
+    if (nodes.length) {
+      Array.prototype.forEach.call(nodes, function (n) {
+        out.push({ role: n.getAttribute('data-message-author-role') === 'user' ? 'You' : 'Assistant', el: n });
+      });
+    } else {
+      nodes = document.querySelectorAll('[data-testid="user-message"], .font-claude-message');
+      Array.prototype.forEach.call(nodes, function (n) {
+        out.push({ role: (' ' + n.className + ' ').indexOf(' font-claude-message ') !== -1 ? 'Assistant' : 'You', el: n });
+      });
+    }
+    var seen = {};
+    out.forEach(function (t) {
+      t.raw = (t.el.innerText || '');
+      t.k = turnKey(t.el, t.role, t.raw, seen);
+      t.n = turnOrdinal(t.el);
+    });
+    return out;
+  }
+
+  // Fold a freshly seen window of messages into what we already remember.
+  // The window is a contiguous run of the real conversation, so a message we
+  // have not seen before belongs next to whichever of its neighbours we do
+  // know — after the one before it, or failing that before the one after.
+  function mergeTurns(stored, scanned, earlier) {
+    if (!scanned.length) return stored;
+    if (!stored.length) return scanned.slice();
+    var idx = {}, i;
+    for (i = 0; i < stored.length; i++) idx[stored[i].k] = i;
+    var anyKnown = scanned.some(function (m) { return idx[m.k] !== undefined; });
+    var out = stored.slice();
+    if (!anyKnown) {
+      // Nothing in common — a scroll fast enough that the page swapped the
+      // whole window. Which side it belongs on is what the scroller was
+      // doing; conversations otherwise grow at the end.
+      return earlier ? scanned.concat(out) : out.concat(scanned);
+    }
+    var reindex = function (from) {
+      for (var j = from; j < out.length; j++) idx[out[j].k] = j;
+    };
+    // Where the leading unknowns go: just before the first message we know.
+    var head = -1;
+    for (i = 0; i < scanned.length; i++) {
+      if (idx[scanned[i].k] !== undefined) { head = idx[scanned[i].k]; break; }
+    }
+    var at = head, leading = true;
+    scanned.forEach(function (m) {
+      var known = idx[m.k];
+      if (known !== undefined) {
+        out[known] = m;
+        at = known;
+        leading = false;
+        return;
+      }
+      // Before the first message we recognise, a new one goes in front of it —
+      // that is what scrolling up into older messages looks like. After it,
+      // each follows the one before.
+      var pos;
+      if (leading) {
+        pos = head < 0 ? out.length : head;
+        head = pos + 1;
+      } else {
+        pos = at + 1;
+      }
+      out.splice(pos, 0, m);
+      reindex(pos);
+      at = pos;
+    });
+    // Where the site numbers its turns, that number is the last word on
+    // order — a guess above can only have been a guess.
+    var numbered = out.every(function (m) { return typeof m.n === 'number'; });
+    if (numbered) {
+      out = out.slice().sort(function (a, b) { return a.n - b.n; });
+    }
+    return out;
+  }
+
+  // Read the page and remember it. Serialising every visible message on every
+  // pass would be wasteful on a long thread, so an unchanged message (same
+  // key, same raw length) is left alone.
+  function scanTranscript(force) {
+    if (IS_GITHUB) return;
+    var live = liveTurns();
+    if (!live.length) return;
+    var have = {};
+    logMsgs.forEach(function (m) { have[m.k] = m; });
+    var changed = false;
+    var scanned = live.map(function (t) {
+      var old = have[t.k];
+      if (old && !force && old.len === t.raw.length) return old;
+      var blocks = serializeBlocks(t.el);
+      var len = t.raw.length;
+      if (old && old.len === len && (old.b || []).join('\n') === blocks.join('\n')) return old;
+      changed = true;
+      var rec = { k: t.k, role: t.role, b: blocks, len: len, ts: Date.now() };
+      if (typeof t.n === 'number') rec.n = t.n;
+      return rec;
+    });
+    // Which way the page moved since we last looked, for the rare scan that
+    // shares nothing with what we already hold.
+    var scroller = scrollerFor(live[0].el);
+    var y = scroller ? scroller.scrollTop : 0;
+    var earlier = lastScanY !== null && y < lastScanY;
+    lastScanY = y;
+    var merged = mergeTurns(logMsgs, scanned, earlier);
+    if (changed || merged.length !== logMsgs.length) {
+      logMsgs = merged;
+      saveLog(force);
+    } else if (logDirty) {
+      saveLog(false);
+    }
+  }
+
+  // What a turn's body is, whether it is on the page or only remembered.
+  function turnBlocks(t) {
+    if (t.el && t.el.isConnected) return serializeBlocks(t.el);
+    return (t.b || []).slice();
+  }
+
   function getConversation() {
     if (IS_GITHUB) {
       // A gist can hold several files, each its own labeled section; a
@@ -1641,19 +1899,19 @@
         return { role: role, el: el };
       });
     }
-    var nodes = document.querySelectorAll('[data-message-author-role]');
-    if (nodes.length) {
-      return Array.prototype.map.call(nodes, function (n) {
-        return { role: n.getAttribute('data-message-author-role') === 'user' ? 'You' : 'Assistant', el: n };
-      });
+    scanTranscript(true);
+    var live = liveTurns();
+    if (!logMsgs.length) {
+      return live.length ? live : null;
     }
-    nodes = document.querySelectorAll('[data-testid="user-message"], .font-claude-message');
-    if (nodes.length) {
-      return Array.prototype.map.call(nodes, function (n) {
-        return { role: (' ' + n.className + ' ').indexOf(' font-claude-message ') !== -1 ? 'Assistant' : 'You', el: n };
-      });
-    }
-    return null;
+    // Everything we have ever seen, in order, each still tied to its element
+    // when the page happens to be showing it.
+    var onPage = {};
+    live.forEach(function (t) { onPage[t.k] = t; });
+    return logMsgs.map(function (m) {
+      var t = onPage[m.k];
+      return { role: m.role, el: t ? t.el : null, b: m.b, onPage: !!t };
+    });
   }
 
   function convoTitle() {
@@ -1699,7 +1957,7 @@
     if (turns) {
       turns.forEach(function (t) {
         lines.push('## ' + t.role, '');
-        serializeBlocks(t.el).forEach(function (b) { lines.push(b, ''); });
+        turnBlocks(t).forEach(function (b) { lines.push(b, ''); });
       });
     }
     if (fragments.length) fragmentAppendixMd(lines);
@@ -1711,7 +1969,7 @@
     var parts = [convoTitle() + ' — ' + location.hostname + ' — ' + niceStamp() + (scope ? ' — ' + scope : '')];
     if (turns) {
       turns.forEach(function (t) {
-        parts.push(t.role + ':\n' + serializeBlocks(t.el).join('\n\n'));
+        parts.push(t.role + ':\n' + turnBlocks(t).join('\n\n'));
       });
     }
     if (fragments.length) {
@@ -1745,8 +2003,14 @@
   var picker = $('picker'), pickList = $('pickList');
   var pickTurns = [], picked = [], pickExt = 'md', pickMime = 'text/markdown';
 
-  function pickPreview(el) {
-    return (textOf(el) || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  function turnText(t) {
+    return turnBlocks(t).join('\n\n');
+  }
+  function pickPreview(text) {
+    return (text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
+  function countLabel(n) {
+    return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k characters' : n + ' characters';
   }
 
   // "messages 19–30 of 30" when the choice is a run, a plain count when it is
@@ -1766,6 +2030,12 @@
     $('pickTitle').textContent = n === pickTurns.length
       ? 'All ' + n + ' messages'
       : n + ' of ' + pickTurns.length + ' messages';
+    var recalled = 0;
+    pickTurns.forEach(function (t) { if (t.el === null) recalled++; });
+    var hint = $('pickHint');
+    hint.textContent = recalled
+      ? recalled + ' of these ' + (recalled === 1 ? 'is' : 'are') + ' remembered from earlier — not on the page now. Tap a size to read what was captured.'
+      : 'Tap ↓ on a message to take it and everything after it, or a size to read what was captured.';
     $('pickGo').disabled = !n && !fragments.length;
     $('pickGo').innerHTML = '&#x2B07; Download .' + pickExt;
   }
@@ -1776,8 +2046,9 @@
       var wrap = document.createElement('div');
       wrap.className = 'pick';
 
-      var row = document.createElement('button');
+      var row = document.createElement('div');
       row.className = 'row' + (picked[i] ? ' on' : '');
+      row.setAttribute('role', 'button');
       row.setAttribute('data-i', String(i));
       var tick = document.createElement('span');
       tick.className = 'tick';
@@ -1787,10 +2058,30 @@
       var who = document.createElement('span');
       who.className = 'who';
       who.textContent = t.role === 'You' ? 'You' : (t.role === 'Assistant' ? BRAND : t.role);
+      var text = turnText(t);
       var prev = document.createElement('span');
       prev.className = 'prev';
-      prev.textContent = pickPreview(t.el) || '(no text)';
+      prev.textContent = pickPreview(text) || '(no text)';
       body.appendChild(who); body.appendChild(prev);
+
+      // How much of this message we actually hold, and where it came from —
+      // the whole point of the memory is that you can check it.
+      var meta = document.createElement('button');
+      meta.className = 'meta';
+      meta.textContent = countLabel(text.length) + ' · ' + (t.el === null ? 'remembered' : 'on screen');
+      meta.title = 'Show what was captured';
+      var full = document.createElement('pre');
+      full.className = 'full';
+      full.hidden = true;
+      full.textContent = text || '(nothing captured)';
+      meta.addEventListener('click', function (e) {
+        e.stopPropagation();
+        full.hidden = !full.hidden;
+        meta.classList.toggle('open', !full.hidden);
+      });
+      body.appendChild(meta);
+      body.appendChild(full);
+
       row.appendChild(tick); row.appendChild(body);
       row.addEventListener('click', function () {
         picked[i] = !picked[i];
@@ -2002,6 +2293,7 @@
     });
   });
 
+  loadLog();
   updatePill();
   syncViewport();
   window.__assay = {

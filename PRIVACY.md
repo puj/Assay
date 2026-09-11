@@ -17,9 +17,12 @@ reads a reply.
 On those pages it reads:
 
 - **the passage you tap or select**, so it can highlight and collect it;
-- **the visible conversation, or the file you are looking at**, but only in
-  the moment you press ⭳ .md or ⭳ .txt, so it can build the file you asked
-  for.
+- **the messages the page renders**, as it renders them. Both chat sites show
+  only part of a long conversation at a time — older messages load as you
+  scroll, and some stay collapsed until opened — so Assay keeps a copy of what
+  it has been shown (see below), and an export is then the conversation rather
+  than the part of it on screen at that moment. It reads only what the page
+  itself has already rendered: nothing is requested from any server.
 
 It reads nothing on any other website, and it does not run anywhere else.
 
@@ -27,6 +30,11 @@ It reads nothing on any other website, and it does not run anywhere else.
 
 - **The fragments you collect and the notes you write**, into your browser's
   local storage on the site itself.
+- **A copy of the conversation as the page has shown it to you**, into that
+  same local storage, so ⭳ .md and ⭳ .txt can export the whole thread. You
+  can see exactly what is held, message by message, in the picker that opens
+  when you export — tap a message's size to read it. It is capped, and the
+  least recently opened conversations are dropped first.
 - **The composed prompt**, into that site's own message box, when you press
   ↗ To composer. Nothing is ever sent for you — you review it and press send.
 - **A copy of that text to your clipboard**, when you press ⧉ Copy notes on a
@@ -35,12 +43,14 @@ It reads nothing on any other website, and it does not run anywhere else.
 
 ## Where your data lives, and how to remove it
 
-Fragments and notes are stored under keys beginning `assay.` in the local
-storage of the site, grouped per conversation — or per file, on GitHub. They stay on the device
-that made them: they are not synced, backed up or transmitted.
+Fragments, notes and the remembered conversation are stored under keys
+beginning `assay.` in the local storage of the site, grouped per conversation
+— or per file, on GitHub. They stay on the device that made them: they are
+not synced, backed up or transmitted.
 
 To remove them, delete individual fragments with ✕, or use **Clear** in the
-tray. Clear keeps one restorable copy of the batch — so an accidental clear
+tray. Clearing the site's storage (below) also forgets the remembered
+conversations. Clear keeps one restorable copy of the batch — so an accidental clear
 is undoable — until the next clear or send replaces it.
 
 **Uninstalling the extension does not by itself erase this data**, because it

@@ -104,3 +104,16 @@ Append only. Never edit an entry after the fact.
   though empty, was leaking a tab character into every exported code line
   via `innerText`'s cross-cell join — code exports now read each row's own
   cell instead.
+- **2026-09-11** — exports stopped being limited to what the page happened to
+  be rendering. Both sites show only a window of a long conversation: older
+  messages load as you scroll, some sections stay collapsed until opened, and
+  ⭳ .md could only ever see the rendered few. Assay now remembers each message
+  as the page shows it — keyed by ChatGPT's message id where there is one,
+  otherwise by the opening of its text, which streaming appends to but never
+  rewrites — and merges each freshly seen window into what it already holds.
+  Where the site numbers its turns that number settles the order; where it
+  does not, a window sharing nothing with what we hold is placed by which way
+  the scroller moved. Exports read from that memory, falling back to the live
+  element whenever a message is still on the page. The picker now shows, per
+  message, how much was captured and whether it came from the page or from
+  memory, and tapping that size opens the captured text to check it.
