@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.16.1';
+  var VERSION = '0.17.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   // What the page has shown us of this conversation, remembered so an export
@@ -1257,60 +1257,62 @@
   }
   setInterval(maybeReanchor, 1200);
 
-  // Catch messages as they arrive: while one streams, when older ones load on
-  // scroll, and when a collapsed one is opened. Two rules keep this from
-  // being felt. Nothing is scanned unless the conversation itself changed —
-  // typing into the message box changes the page constantly and changes the
-  // conversation not at all — and a scan never runs inside the handler that
-  // noticed the change: it waits for the browser to have a moment, so it can
-  // never land in the middle of a keystroke.
-  var scanTimer = null, idleHandle = 0, lastScanAt = 0, domDirty = true, scanCount = 0;
+  // Reading the thread off the page means reading every message on it, and
+  // that forces the browser to lay the page out. Done in the background — on
+  // every scroll, on every streamed token — it is felt: the selection you are
+  // dragging stops moving with your finger. So it is not done in the
+  // background. The conversation is read at the moments you ask for it and at
+  // no others: when the sheet opens, when you press a download, and while the
+  // export list is open in front of you. That last one is the only time
+  // watching the page pays for itself — scrolling back through old messages
+  // with the count in the header climbing is how they get loaded — and it
+  // costs nothing the rest of the time, because the rest of the time there is
+  // nothing attached.
+  var scanTimer = null, idleHandle = 0, scanCount = 0;
   function runScan() {
     clearTimeout(scanTimer);
     scanTimer = null;
     idleHandle = 0;
-    lastScanAt = Date.now();
-    domDirty = false;
     scanCount++;
     try { scanTranscript(false); } catch (e) {}
   }
   function scanWhenIdle() {
     if (idleHandle) return;
     if (window.requestIdleCallback) {
-      idleHandle = window.requestIdleCallback(runScan, { timeout: 1200 });
+      idleHandle = window.requestIdleCallback(runScan, { timeout: 900 });
     } else {
       idleHandle = 1;
-      setTimeout(runScan, 80);
+      setTimeout(runScan, 60);
     }
   }
-  // `wait` is how long to let changes settle; `maxWait` is how long the scan
-  // is willing to be put off while they keep coming — a fast scroll swaps the
-  // window several times a second and a plain debounce would wait for the
-  // scrolling to stop and miss everything in between.
-  function scanSoon(wait, maxWait) {
-    if (!domDirty) return;
-    if (maxWait && Date.now() - lastScanAt >= maxWait) return scanWhenIdle();
-    if (scanTimer) return;
-    scanTimer = setTimeout(scanWhenIdle, wait);
+  function scanAfterQuiet() {
+    if (scanTimer || idleHandle) return;
+    scanTimer = setTimeout(scanWhenIdle, 300);
   }
-  // Did this change touch the conversation, or only the box you are typing in?
-  // And if it did: were messages added or taken away, or did existing text
-  // merely change? Nodes arriving is the conversation loading more of itself,
-  // which must not be missed; text changing is a message streaming, which can
-  // wait, since it will still be there when it finishes.
-  function conversationChange(records) {
-    var kind = 0;
-    for (var i = 0; i < records.length; i++) {
-      var t = records[i].target;
-      var el = t && (t.nodeType === 1 ? t : t.parentElement);
-      if (!el || el === host || host.contains(el)) continue;
-      var ed = el.closest && el.closest(EDITABLE_SEL);
-      if (ed && !host.contains(ed)) continue;   // somewhere text is being written
-      if (records[i].type === 'childList' &&
-          (records[i].addedNodes.length || records[i].removedNodes.length)) return 2;
-      kind = 1;
+  // Attached when the export list opens, gone the moment it closes.
+  var pickWatch = null;
+  function onPickScroll(e) {
+    if (e.target === host || (e.target && e.target.nodeType === 1 && host.contains(e.target))) return;
+    scanAfterQuiet();
+  }
+  function watchWhilePicking(on) {
+    if (IS_GITHUB) return;
+    if (on) {
+      if (pickWatch) return;
+      window.addEventListener('scroll', onPickScroll, true);
+      pickWatch = setInterval(scanWhenIdle, 1500);
+    } else {
+      if (!pickWatch) return;
+      window.removeEventListener('scroll', onPickScroll, true);
+      clearInterval(pickWatch);
+      pickWatch = null;
+      clearTimeout(scanTimer);
+      scanTimer = null;
+      if (idleHandle && window.cancelIdleCallback) {
+        try { window.cancelIdleCallback(idleHandle); } catch (e) {}
+        idleHandle = 0;
+      }
     }
-    return kind;
   }
   if (!IS_GITHUB) {
     // Whatever is pending goes to storage before the page can be taken away.
@@ -1318,23 +1320,6 @@
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'hidden' && logDirty) saveLog(true);
     });
-    try {
-      new MutationObserver(function (records) {
-        var kind = conversationChange(records);
-        if (!kind) return;
-        domDirty = true;
-        if (kind === 2) scanSoon(250, 700);   // messages came or went
-        else scanSoon(700, 2000);             // one of them is still writing
-      }).observe(document.body, { childList: true, subtree: true, characterData: true });
-    } catch (e) {}
-    window.addEventListener('scroll', function (e) {
-      if (e.target === host || (e.target && e.target.nodeType === 1 && host.contains(e.target))) return;
-      scanSoon(200, 400);
-    }, true);
-    setInterval(function () {
-      if (domDirty && Date.now() - lastScanAt > 2000) scanWhenIdle();
-    }, 4000);
-    setTimeout(runScan, 1000);
   }
   setTimeout(maybeReanchor, 400);
 
@@ -2127,7 +2112,7 @@
         var nameEl = fileEl && fileEl.querySelector('.gist-blob-name');
         var name = nameEl && textOf(nameEl).trim();
         var role = name || (multi ? path + ' — message ' + (i + 1) : path) || 'File';
-        return { role: role, el: el };
+        return { role: role, el: el, key: i + ':' + role };
       });
     }
     scanTranscript(true);
@@ -2230,6 +2215,16 @@
   function pickPreview(text) {
     return (text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
   }
+  // Enough of a message to recognise it, and how much of it we hold — read
+  // without once asking the browser for laid-out text. innerText forces a
+  // layout, and this list runs to as many rows as the thread is long, so the
+  // message itself is fetched only for the row you open.
+  function turnHint(t) {
+    var held = (t.b || []).join('\n\n');
+    var live = (t.el && t.el.isConnected) ? normText(t.el.textContent || '') : '';
+    var src = live.length > held.length ? live : held;
+    return { len: src.length, prev: pickPreview(src.slice(0, 600)) };
+  }
   function countLabel(n) {
     return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k characters' : n + ' characters';
   }
@@ -2265,70 +2260,104 @@
     $('pickGo').innerHTML = '&#x2B07; Download .' + pickExt;
   }
 
-  function renderPicks() {
-    pickList.textContent = '';
-    pickTurns.forEach(function (t, i) {
-      var wrap = document.createElement('div');
-      wrap.className = 'pick';
+  // One row, built once and then kept. The list is redrawn every time a scroll
+  // picks more of the thread up, and throwing away a few hundred rows to build
+  // a few hundred identical ones is the difference between the list keeping up
+  // and the page stuttering — so rows are made when their message first
+  // appears, updated in place after that, and moved rather than remade when
+  // the order changes. Handlers read the row's position off the element, since
+  // that position is exactly what moves.
+  var pickRows = {};
+  function buildRow(key) {
+    var wrap = document.createElement('div');
+    wrap.className = 'pick';
+    var row = document.createElement('div');
+    row.className = 'row';
+    row.setAttribute('role', 'button');
+    var tick = document.createElement('span');
+    tick.className = 'tick';
+    tick.textContent = '\u2713';
+    var body = document.createElement('span');
+    body.className = 'body';
+    var who = document.createElement('span');
+    who.className = 'who';
+    var prev = document.createElement('span');
+    prev.className = 'prev';
+    body.appendChild(who); body.appendChild(prev);
 
-      var row = document.createElement('div');
-      row.className = 'row' + (picked[i] ? ' on' : '');
-      row.setAttribute('role', 'button');
-      row.setAttribute('data-i', String(i));
-      var tick = document.createElement('span');
-      tick.className = 'tick';
-      tick.textContent = '✓';
-      var body = document.createElement('span');
-      body.className = 'body';
-      var who = document.createElement('span');
-      who.className = 'who';
-      who.textContent = t.role === 'You' ? 'You' : (t.role === 'Assistant' ? BRAND : t.role);
-      var text = turnText(t);
-      var prev = document.createElement('span');
-      prev.className = 'prev';
-      prev.textContent = pickPreview(text) || '(no text)';
-      body.appendChild(who); body.appendChild(prev);
-
-      // How much of this message we actually hold, and where it came from —
-      // the whole point of the memory is that you can check it.
-      var meta = document.createElement('button');
-      meta.className = 'meta';
-      meta.textContent = countLabel(text.length) + ' · ' + (t.el === null ? 'remembered' : 'on screen');
-      meta.title = 'Show what was captured';
-      var full = document.createElement('pre');
-      full.className = 'full';
-      full.hidden = !pickOpen[t.key];
-      full.textContent = text || '(nothing captured)';
-      meta.classList.toggle('open', !full.hidden);
-      meta.addEventListener('click', function (e) {
-        e.stopPropagation();
-        full.hidden = !full.hidden;
-        meta.classList.toggle('open', !full.hidden);
-        pickOpen[t.key] = !full.hidden;
-      });
-      body.appendChild(meta);
-      body.appendChild(full);
-
-      row.appendChild(tick); row.appendChild(body);
-      row.addEventListener('click', function () {
-        picked[i] = !picked[i];
-        row.classList.toggle('on', picked[i]);
-        paintPickHeader();
-      });
-
-      var from = document.createElement('button');
-      from.className = 'from';
-      from.textContent = '↓';
-      from.title = 'This message and everything after it';
-      from.addEventListener('click', function () {
-        picked = pickTurns.map(function (_, k) { return k >= i; });
-        renderPicks();
-        paintPickHeader();
-      });
-
-      wrap.appendChild(row); wrap.appendChild(from);
-      pickList.appendChild(wrap);
+    // How much of this message we actually hold, and where it came from —
+    // the whole point of the memory is that you can check it.
+    var meta = document.createElement('button');
+    meta.className = 'meta';
+    meta.title = 'Show what was captured';
+    var full = document.createElement('pre');
+    full.className = 'full';
+    full.hidden = true;
+    var at = function () { return +wrap.getAttribute('data-i'); };
+    meta.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = full.hidden;
+      if (open && !full.textContent) {
+        full.textContent = turnText(pickTurns[at()]) || '(nothing captured)';
+      }
+      full.hidden = !open;
+      meta.classList.toggle('open', open);
+      pickOpen[key] = open;
     });
+    body.appendChild(meta);
+    body.appendChild(full);
+    row.appendChild(tick); row.appendChild(body);
+    row.addEventListener('click', function () {
+      var i = at();
+      picked[i] = !picked[i];
+      row.classList.toggle('on', picked[i]);
+      paintPickHeader();
+    });
+    var from = document.createElement('button');
+    from.className = 'from';
+    from.textContent = '\u2193';
+    from.title = 'This message and everything after it';
+    from.addEventListener('click', function () {
+      var i = at();
+      picked = pickTurns.map(function (_, k) { return k >= i; });
+      renderPicks();
+      paintPickHeader();
+    });
+    wrap.appendChild(row); wrap.appendChild(from);
+    return { wrap: wrap, row: row, who: who, prev: prev, meta: meta, full: full, sig: '' };
+  }
+
+  function renderPicks() {
+    var seen = {}, node = pickList.firstChild;
+    pickTurns.forEach(function (t, i) {
+      var key = t.key || (i + ':' + t.role);
+      var r = pickRows[key] || (pickRows[key] = buildRow(key));
+      seen[key] = true;
+      var hint = turnHint(t);
+      var sig = hint.len + ':' + (t.el === null ? 'r' : 's') + ':' + t.role + ':' + hint.prev;
+      if (sig !== r.sig) {
+        r.sig = sig;
+        r.who.textContent = t.role === 'You' ? 'You' : (t.role === 'Assistant' ? BRAND : t.role);
+        r.prev.textContent = hint.prev || '(no text)';
+        r.meta.textContent = countLabel(hint.len) + ' \u00b7 ' + (t.el === null ? 'remembered' : 'on screen');
+        // The text it holds is the old copy of a message that has since grown.
+        if (!r.full.hidden) r.full.textContent = turnText(t) || '(nothing captured)';
+        else r.full.textContent = '';
+      }
+      var open = !!pickOpen[key];
+      if (open && !r.full.textContent) r.full.textContent = turnText(t) || '(nothing captured)';
+      if (r.full.hidden === open) {
+        r.full.hidden = !open;
+        r.meta.classList.toggle('open', open);
+      }
+      if (r.row.classList.contains('on') !== !!picked[i]) r.row.classList.toggle('on', !!picked[i]);
+      r.wrap.setAttribute('data-i', String(i));
+      r.row.setAttribute('data-i', String(i));
+      if (node === r.wrap) node = node.nextSibling;
+      else pickList.insertBefore(r.wrap, node);   // moves it if it is already in
+    });
+    while (node) { var next = node.nextSibling; pickList.removeChild(node); node = next; }
+    Object.keys(pickRows).forEach(function (k) { if (!seen[k]) delete pickRows[k]; });
     paintPickHeader();
   }
 
@@ -2346,10 +2375,23 @@
   // from what we now hold, and what you had chosen, opened and scrolled to
   // survives it — the count in the header moving is the point, since that is
   // what tells you a scroll is picking more of the conversation up.
+  // What the list would look like, in one string: if this has not moved,
+  // rebuilding it would redraw the same rows for nothing.
+  var pickSig = '';
+  function pickerSig(turns) {
+    var out = [turns.length];
+    for (var i = 0; i < turns.length; i++) {
+      out.push(turns[i].key + ':' + (turns[i].len || 0) + ':' + (turns[i].el ? 1 : 0));
+    }
+    return out.join('|');
+  }
   function refreshPickerIfOpen() {
     if (!picker || !picker.classList.contains('show')) return;
     var turns = conversationTurns();
     if (!turns || !turns.length) return;
+    var sig = pickerSig(turns);
+    if (sig === pickSig) return;
+    pickSig = sig;
     var was = {};
     pickTurns.forEach(function (t, i) { was[t.key] = picked[i]; });
     var atEnd = pickList.scrollTop + pickList.clientHeight >= pickList.scrollHeight - 24;
@@ -2375,6 +2417,7 @@
     pickTurns = turns;
     picked = turns.map(function () { return true; });
     pickOpen = {};
+    pickSig = pickerSig(turns);
     renderPicks();
     toast('Rebuilt from the page — ' + turns.length + ' message' + (turns.length === 1 ? '' : 's'), 2400);
   }
@@ -2387,14 +2430,19 @@
     pickMime = mime;
     pickOpen = {};
     picked = turns.map(function () { return true; });
+    pickSig = pickerSig(turns);
     closeSheet();
     picker.classList.add('show');
     updatePill();
     renderPicks();
     // The recent end is what you came for, so start there.
     pickList.scrollTop = pickList.scrollHeight;
+    // Scroll the thread behind this list and the list follows — the one place
+    // the page is worth watching, and only for as long as it is up.
+    watchWhilePicking(true);
   }
   function closePicker(reopen) {
+    watchWhilePicking(false);
     picker.classList.remove('show');
     if (reopen) openSheet(); else updatePill();
   }

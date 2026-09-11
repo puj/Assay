@@ -191,3 +191,20 @@ Append only. Never edit an entry after the fact.
   promptly, since that is the conversation loading more of itself, and
   streaming text waits, since it will still be there when it stops. Typing
   120 characters into a 120-message thread now causes no scan whatsoever.
+- **2026-09-11** — the measurements were right and the thing was still unusable:
+  no scan ran while typing, and selections still visibly lagged behind a
+  finger. Two rounds of making continuous capture cheap had both failed, so the
+  premise went instead. Nothing is attached to the page any more — no mutation
+  observer, no scroll handler, no interval — and the thread is read at three
+  moments you can point to: opening the tray, pressing ⭳, and scrolling with
+  the export picker open, which is the one time watching the page is the thing
+  you asked for. Two things turned up once the picker became the hot path: it
+  rebuilt all of its rows on every scan, and each row carried the *entire* text
+  of its message in a hidden `<pre>` it would probably never show. Rows are now
+  built once and updated in place, and a message's text is fetched only for the
+  row you open. On a 200-message thread: 101ms per update to 1ms when nothing
+  changed, 82ms to 11ms when something did. Scrolling with highlights painted
+  holds 60fps, p95 16.9ms. The lesson is about the benchmark, not the code — a
+  mocked page with no compositor, no real text shaping and a synthetic scroller
+  cannot tell you what a phone feels, so "0 scans" was true and meaningless.
+  What a phone feels is whether anything of ours is attached at all.

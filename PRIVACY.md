@@ -17,12 +17,14 @@ reads a reply.
 On those pages it reads:
 
 - **the passage you tap or select**, so it can highlight and collect it;
-- **the messages the page renders**, as it renders them. Both chat sites show
-  only part of a long conversation at a time — older messages load as you
+- **the messages the page renders**, when you ask for them. Both chat sites
+  show only part of a long conversation at a time — older messages load as you
   scroll, and some stay collapsed until opened — so Assay keeps a copy of what
   it has been shown (see below), and an export is then the conversation rather
-  than the part of it on screen at that moment. It reads only what the page
-  itself has already rendered: nothing is requested from any server.
+  than the part of it on screen at that moment. It reads the thread when you
+  open the tray, when you press ⭳, and while the export picker is open; with
+  the picker closed it does not read the page at all. It reads only what the
+  page itself has already rendered: nothing is requested from any server.
 
 It reads nothing on any other website, and it does not run anywhere else.
 
@@ -31,7 +33,9 @@ It reads nothing on any other website, and it does not run anywhere else.
 - **The fragments you collect and the notes you write**, into your browser's
   local storage on the site itself.
 - **A copy of the conversation as the page has shown it to you**, into that
-  same local storage, so ⭳ .md and ⭳ .txt can export the whole thread. You
+  same local storage, so ⭳ .md and ⭳ .txt can export more than the handful of
+  messages still on screen. This is written only when Assay reads the thread —
+  on export, on opening the tray, or while the export picker is open. You
   can see exactly what is held, message by message, in the picker that opens
   when you export — tap a message's size to read it. It is capped, and the
   least recently opened conversations are dropped first. Messages the
