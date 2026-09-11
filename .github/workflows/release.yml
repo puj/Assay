@@ -121,12 +121,30 @@ jobs:
             exit 0
           fi
           mkdir -p ext && unzip -q dist/assay-extension.zip -d ext
-          if ! npx web-ext@8 sign --channel=listed \
-              --source-dir=ext \
-              --api-key="$AMO_JWT_ISSUER" \
-              --api-secret="$AMO_JWT_SECRET" \
-              --approval-timeout=0; then
-            echo "- **Firefox Add-ons** — FAILED for v$VERSION (see the job log)" >> "$GITHUB_STEP_SUMMARY"
+          set -o pipefail
+          ok=""
+          for attempt in 1 2 3; do
+            if npx web-ext@8 sign --channel=listed \
+                --source-dir=ext \
+                --api-key="$AMO_JWT_ISSUER" \
+                --api-secret="$AMO_JWT_SECRET" \
+                --approval-timeout=0 2>&1 | tee amo.log; then
+              ok=1; break
+            fi
+            # A retry after the version actually landed is not a failure.
+            if grep -qi 'already exists\|Version already' amo.log; then
+              echo "v$VERSION was already uploaded."
+              ok=1; break
+            fi
+            if [ "$attempt" = 3 ]; then break; fi
+            echo "::warning title=Firefox upload retrying::Attempt $attempt failed (AMO is often briefly unavailable); trying again in 45s."
+            sleep 45
+          done
+          if [ -z "$ok" ]; then
+            echo "- **Firefox Add-ons** — FAILED for v$VERSION after 3 attempts (see the job log)" >> "$GITHUB_STEP_SUMMARY"
+            if grep -qi 'Bad Gateway\|502\|503\|504' amo.log; then
+              echo "::error title=Firefox Add-ons::AMO returned a server error, which is usually temporary and nothing to do with the package. Re-send this version with Actions → Release → Run workflow → publish: firefox."
+            fi
             exit 1
           fi
           echo "- **Firefox Add-ons** — submitted v$VERSION for review" >> "$GITHUB_STEP_SUMMARY"
@@ -169,6 +187,8 @@ jobs:
               echo "::error title=Chrome Web Store::Google rejected the refresh token: expired or revoked. A consent screen left in Testing expires tokens after seven days — publish it, run 'npm run cws-token' again, and replace CWS_REFRESH_TOKEN."
             elif grep -qi 'invalid_client\|unauthorized_client' cws.log; then
               echo "::error title=Chrome Web Store::Google did not accept CWS_CLIENT_ID/CWS_CLIENT_SECRET as a pair. Check both against APIs & Services → Credentials."
+            elif grep -q ITEM_NOT_UPDATABLE cws.log; then
+              echo "::error title=Chrome Web Store::v$VERSION was not uploaded because the version before it is still in review — the store allows only one pending version at a time. Nothing is wrong with this build. Once the pending review clears, send this one with Actions → Release → Run workflow → publish: chrome."
             elif grep -q 'Forbidden' cws.log; then
               # The CLI prints "errors: [Array]" and swallows the reason. Ask
               # the API about the item directly and show what it says.

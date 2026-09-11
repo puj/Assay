@@ -131,3 +131,10 @@ Append only. Never edit an entry after the fact.
   misjudged window can never erase a conversation. Away from the bottom
   nothing is trimmed: the page may simply not have loaded the rest yet, and
   losing remembered messages would be the worse failure.
+- **2026-09-11** — v0.14.1 reached neither store, for two reasons that were
+  nothing to do with the build. Chrome refuses an upload while the version
+  before it is still in review (0.14.0, hours old): ITEM_NOT_UPDATABLE, which
+  the run now explains in those words, with the dispatch to re-send once the
+  queue clears. AMO returned a bare 502, so the Firefox leg now retries three
+  times — treating "version already exists" as the success it is, since a
+  retry after the upload actually landed is not a failure.
