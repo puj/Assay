@@ -153,3 +153,25 @@ Append only. Never edit an entry after the fact.
   message we hold but did not just see is no longer dropped for being absent;
   only a reused turn number or the visible end of the thread is evidence
   enough, because losing a real message is worse than keeping a stale one.
+- **2026-09-12** — the export still shrank when you jumped around a thread,
+  and the reasons were worth the dig. Messages are now identified by their
+  text rather than anything the site happens to label them with: a hash of
+  the whole message, an opening of 200 characters to recognise it while it
+  grows, and a site id only as a hint. Two messages that read the same —
+  "Yes." twice — stay two messages, told apart by their neighbours, and a
+  text too short to be distinctive is never trusted as an anchor.
+  Order turned out to be the hard half. A window that shares nothing with
+  what we hold says nothing about where it goes, so it is kept as its own
+  run, and the first later window that overlaps two runs proves they are
+  adjacent and in what order, and stitches them. Which was written, and then
+  thrown away every time: a merge that only reorders changes neither the
+  count nor a word of the text, and the code only kept a merge when one of
+  those changed. Nothing is deleted any more at all; ↻ in the picker forgets
+  a conversation and reads the page again, which is the honest way to handle
+  a thread edited elsewhere. Claude had nothing to export because its markup
+  had moved on, so message-finding now tries several shapes and falls back to
+  anything in main that looks like a message. Scrolling is throttled rather
+  than debounced — a fast scroll used to outrun the scan entirely — and a
+  scan of a window we already know costs under a millisecond on a
+  200-message thread. The picker follows the page while it is open. The pill
+  says Assay.

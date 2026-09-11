@@ -61,7 +61,7 @@ Assay gives that step an interface. While you read a reply on
 - **↗ To composer** writes your fragments and notes into the site's own message box. Nothing is auto-sent; you review, then send.
 - **On GitHub**, where there is no message box, the same tray offers **⧉ Copy notes** instead: the set goes to the clipboard and stays in the tray.
 - **⭳ .md / ⭳ .txt** export the conversation as Markdown or plain text with your fragments appended, named after the chat: `assay-<chat title>-<date>-<time>.md`. A picker lets you choose which messages go in — each row shows who spoke and enough of the message to recognise it, and **↓** takes one message and everything after it, which is usually what you want.
-- **The whole thread, not just what's on screen.** Both sites render only a window of a long conversation. Assay remembers the messages as the page shows them, so an export isn't limited to the handful currently loaded — and the picker tells you, per message, how much was captured and whether it came from the page or from memory. What's remembered defers to the page on *order*, and on content it keeps whichever copy holds more of the message — a collapsed or still-streaming view never overwrites the full text captured earlier. Messages are only ever dropped on evidence: a turn number the page has reused for something else, or the end of the thread in plain view.
+- **The whole thread, not just what's on screen.** Both sites render only a window of a long conversation. Assay remembers the messages as the page shows them, so an export isn't limited to the handful currently loaded — and the picker tells you, per message, how much was captured and whether it came from the page or from memory. Messages are identified by their text, so nothing is lost when a site changes its markup, and identical messages stay distinct. Nothing is ever dropped automatically — a message you can't see may be one the page hasn't loaded — and ↻ in the picker forgets this conversation and reads the page again when a thread has been edited elsewhere. While the picker is open it keeps up with the page, so you can watch the count rise as you scroll.
 - **Every conversation keeps its own list**, so a batch started in one thread never bleeds into another.
 
 No wrapper prompt is added to what you send. Your selection is the signal and
@@ -124,7 +124,7 @@ re-attached on in-app navigation. Note controls and the tray track
 
 ## Screenshots
 
-<img src="store/screenshot-1.png" alt="Assay in a chat: three passages in an assistant reply are highlighted in different colours, an action bar with Add, Note, cancel and a row of verbs (Keep, Push, Tweak, Reword, Challenge, Cut) floats a line above the latest one, and a Deep dive pill in the corner shows two collected fragments">
+<img src="store/screenshot-1.png" alt="Assay in a chat: three passages in an assistant reply are highlighted in different colours, an action bar with Add, Note, cancel and a row of verbs (Keep, Push, Tweak, Reword, Challenge, Cut) floats a line above the latest one, and an Assay pill in the corner shows two collected fragments">
 
 <img src="store/screenshot-2.png" alt="The Assay tray, titled Collected fragments, listing three quotes with a short note under each and an after/before toggle, plus Clear, .md, .txt and To composer buttons">
 
