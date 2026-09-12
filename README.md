@@ -184,6 +184,12 @@ Assay used to keep a running copy of the thread so this wasn't necessary. It was
 **Does it slow the page down?**
 It isn't attached to the page. No observers, no polling, no scroll handlers, nothing stored between exports. Scrolling past collected highlights, typing a follow-up and a reply streaming in each ask Assay for zero frames of work. Highlights are painted by the browser into the text (CSS custom highlights) rather than drawn as boxes positioned over it, so scrolling never involves Assay at all; browsers without that API get the boxes, and those do have to be repositioned.
 
+**ChatGPT put a document inside the reply and I can't select in it.**
+You can now. Those canvas cards are rendered as editors, and an editor fights a tap: the caret lands, the keyboard comes up, the browser runs its own word selection. Assay marks a card inside the conversation as not-editable, so it reads as ordinary conversation text and selects like the prose around it — no words are changed, and its text now lands in exports too. If you'd rather edit the card in place, **Cards: editable** in the tray hands it straight back to the site. The message box is never touched by this.
+
+**Something isn't working and I'm on a phone with no console.**
+Open the tray and press **ⓘ Copy diagnosis**. It copies what Assay can see on that page — which message-finder matched, how many turns it found, and what it thinks each editable on the page is — which is what a bug report needs.
+
 **Does it auto-send anything?**
 Never. ↗ To composer only fills the message box.
 

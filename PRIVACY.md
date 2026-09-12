@@ -36,6 +36,11 @@ It reads nothing on any other website, and it does not run anywhere else.
   loaded; 0.18.0 removed that, and removes any copy an earlier version left
   behind the next time it runs. The conversation is read only into the file you
   asked for.
+- **One attribute on a card the site made editable.** ChatGPT renders documents
+  into the middle of a reply as editors, which cannot be selected in; Assay
+  marks those cards as not-editable so they read as ordinary text. No words are
+  changed, nothing is sent, and **Cards: editable** in the tray undoes it. The
+  message box is never touched.
 - **The composed prompt**, into that site's own message box, when you press
   ↗ To composer. Nothing is ever sent for you — you review it and press send.
 - **A copy of that text to your clipboard**, when you press ⧉ Copy notes on a

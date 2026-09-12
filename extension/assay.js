@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.18.1';
+  var VERSION = '0.19.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -275,6 +275,10 @@
         '<button class="btn minor" id="mdBtn">&#x2B07; .md</button>' +
         '<button class="btn minor" id="txtBtn">&#x2B07; .txt</button>' +
       '</div>' +
+      '<div class="actions">' +
+        '<button class="btn minor" id="flatBtn" title="Read cards the site made editable as ordinary text">Cards: text</button>' +
+        '<button class="btn minor" id="diagBtn" title="Copy what Assay can see on this page">&#x24D8; Copy diagnosis</button>' +
+      '</div>' +
       '<div class="actions last">' +
         '<button class="btn go" id="goBtn"></button>' +
       '</div>' +
@@ -329,6 +333,7 @@
       saveMap(MAP_KEY, map);
     }
     fragments = normalize(list);
+    edGen++;                       // a new thread: place every editable again
     anchorSig = '';
     updatePill();
     redraw();
@@ -363,6 +368,12 @@
     tapStart = { x: e.clientX, y: e.clientY };
     tapMoved = false;
     lastPointer = { ts: Date.now(), target: null, inHost: e.target === host };
+    // Before the browser decides what this tap means. Turning the card back
+    // into text has to happen now or not at all: a moment later the caret is
+    // already in it and the keyboard is on its way up.
+    if (flatCards && e.target && e.target.nodeType === 1 && !host.contains(e.target)) {
+      try { flattenCards(e.target); } catch (err) {}
+    }
   }, true);
   root.addEventListener('pointerdown', function (e) {
     lastPointer = { ts: Date.now(), target: e.target, inHost: true };
@@ -935,8 +946,9 @@
     // On GitHub only the file itself is readable text; a line of code is
     // often short, so no length gate there.
     if (IS_GITHUB) return block.closest(GH_CONTENT) ? block : null;
+    // Inside a reply, a short line is still a line worth taking.
     if (block.closest('[data-message-author-role="assistant"]')) return block;
-    if (block.closest('.font-claude-message')) return block;
+    if (block.closest(TURN_SEL)) return block;
     if ((block.textContent || '').trim().length < 30) return null;
     var main = document.querySelector('main');
     if (main && main.contains(block)) return block;
@@ -963,18 +975,111 @@
     if (!ed || !ed.closest) return false;
     if (ed.id === 'prompt-textarea') return true;
     if (ed.querySelector && ed.querySelector('#prompt-textarea')) return true;
-    // Both sites wrap the composer in a form (ChatGPT) or fieldset (Claude);
-    // a card in the conversation sits in neither.
+    // Both sites have wrapped the composer in a form (ChatGPT) or a fieldset
+    // (Claude); a card in the conversation sits in neither.
     if (ed.closest('form,fieldset')) return true;
-    return !!ed.closest('[data-testid*="composer"],[class*="composer"],[class*="Composer"]');
+    return !!ed.closest('[data-testid*="composer"],[class*="composer"],[class*="Composer"],' +
+      '[data-testid*="chat-input"],[class*="chat-input"],[aria-label*="message" i]');
   }
 
-  // The editable the tap landed in, unless it is the composer.
+  // Is this editable part of the conversation, or something else the page put
+  // on screen? Only the conversation is ours to select in.
+  //
+  // This used to be asked the other way round — anything editable we could not
+  // recognise as the composer was treated as a passage — and that default is
+  // the wrong way up. Recognising the composer means knowing the names a site
+  // currently uses, and the day Claude changed them every tap in the message
+  // box was taken as a selection and had focus handed back, which is to say
+  // typing stopped working. A site can rename whatever it likes; what it cannot
+  // do is put its composer inside one of the conversation's own turns. So an
+  // editable we cannot place is left alone, and the worst case is a card you
+  // cannot select in rather than a chat you cannot type in.
+  var edPlace = (typeof WeakMap === 'function') ? new WeakMap() : null;
+  var edGen = 0;
+  function inConversation(ed) {
+    if (IS_GITHUB) return !!ed.closest(GH_CONTENT);
+    if (ed.closest(TURN_SEL)) return true;            // cheap, and usually enough
+    var was = edPlace && edPlace.get(ed);
+    if (was && was.gen === edGen) return was.in;
+    // Markup TURN_SEL does not name: ask the finder, which knows shapes
+    // TURN_SEL cannot. It costs a pass over the page, so the answer is kept.
+    var yes = false;
+    try {
+      var turns = liveTurns();
+      for (var i = 0; i < turns.length; i++) {
+        if (turns[i].el !== ed && turns[i].el.contains(ed)) { yes = true; break; }
+      }
+    } catch (e) {}
+    if (edPlace) edPlace.set(ed, { gen: edGen, in: yes });
+    return yes;
+  }
+
+  // ChatGPT drops a document into the middle of a reply — the canvas card — and
+  // renders it into an editor. To the page that is an input; to you it is
+  // something you are reading, and the editor fights every attempt to select in
+  // it: the caret lands, the keyboard rises, the browser runs its own word
+  // selection. So a card in the conversation is turned back into ordinary
+  // conversation text — the words do not move, nothing is rewritten, the
+  // element simply stops claiming to be editable — and then it reads and
+  // selects like the prose around it.
+  //
+  // This is reversible and it is yours to reverse: the tray says "Cards: text"
+  // or "Cards: editable", and nothing is ever done to the message box, to an
+  // editable we cannot place inside a turn, or to one you are typing in.
+  var FLAT_KEY = 'assay.flatCards.v1';
+  var flatCards = loadJSON(FLAT_KEY, { on: true }).on !== false;
+  var flattened = [];
+  var FLAT_MIN = 120;      // shorter than this it is a field, not a document
+  function flattenCards(near) {
+    if (IS_GITHUB || !flatCards) return;
+    // A tap only cares about the card under the finger; the tray asks for all
+    // of them. Doing one is what keeps this off the critical path.
+    var eds;
+    if (near && near.closest) {
+      var one = near.closest(RICH_SEL + ',textarea');
+      eds = one ? [one] : [];
+    } else {
+      eds = document.querySelectorAll(RICH_SEL + ',textarea');
+    }
+    for (var i = 0; i < eds.length; i++) {
+      var ed = eds[i];
+      if (ed === host || host.contains(ed)) continue;
+      if (ed.getAttribute('data-assay-flat')) continue;
+      if (isComposerEl(ed)) continue;                       // never the message box
+      if (document.activeElement === ed || ed.contains(document.activeElement)) continue;
+      var text = ed.value != null ? ed.value : (ed.textContent || '');
+      if ((text || '').trim().length < FLAT_MIN) continue;  // a field, not a card
+      if (!inConversation(ed)) continue;                    // must be in the thread
+      if (ed.tagName === 'TEXTAREA' || ed.tagName === 'INPUT') {
+        if (ed.readOnly) continue;
+        ed.readOnly = true;
+        flattened.push({ el: ed, kind: 'ro' });
+      } else {
+        flattened.push({ el: ed, kind: 'ce', was: ed.getAttribute('contenteditable') });
+        ed.setAttribute('contenteditable', 'false');
+      }
+      ed.setAttribute('data-assay-flat', '1');
+    }
+  }
+  function unflattenCards() {
+    flattened.forEach(function (f) {
+      try {
+        if (f.kind === 'ro') f.el.readOnly = false;
+        else if (f.was == null) f.el.removeAttribute('contenteditable');
+        else f.el.setAttribute('contenteditable', f.was);
+        f.el.removeAttribute('data-assay-flat');
+      } catch (e) {}
+    });
+    flattened = [];
+  }
+
+  // The editable the tap landed in, when that editable is conversation.
   function pageEditable(el, sel) {
     if (!el || !el.closest) return null;
     var ed = el.closest(sel || EDITABLE_SEL);
     if (!ed || ed === host || host.contains(ed)) return null;
-    return isComposerEl(ed) ? null : ed;
+    if (isComposerEl(ed)) return null;
+    return inConversation(ed) ? ed : null;
   }
 
   // The message that a tapped block belongs to; blocks fall back to
@@ -986,7 +1091,9 @@
     if (ed) return ed;
     // A file (or one rendered comment) is the document a selection grows in.
     if (IS_GITHUB) return block.closest(GH_CONTENT) || block;
-    return block.closest('[data-message-author-role],[data-testid="user-message"],.font-claude-message') || block;
+    // The turn is the document a selection grows in — every name for it, since
+    // one that has been renamed silently costs you growth past a paragraph.
+    return block.closest(TURN_SEL) || block;
   }
 
   function beginPending(container, blocks, foff) {
@@ -1047,7 +1154,7 @@
     // card stays editable by clicking into it.
     var touch = lastPointerType === 'touch';
     if (card && touch && (preTapActive === card || card.contains(preTapActive))) return;
-    if (!card && el.closest && el.closest('a,button,input,textarea,select,[contenteditable],[role="button"],svg')) {
+    if (!card && el.closest && el.closest('a,button,input,textarea,select,' + RICH_SEL + ',[role="button"],svg')) {
       // Tapping into an edit box means "I am editing", not "start over":
       // keep what is already selected behind it.
       if (!pageEditable(el)) clearPending();
@@ -1473,6 +1580,7 @@
   // still collect while it's open, and the pill rides above it as a toggle.
   function openSheet() {
     sheetOpen = true;
+    try { flattenCards(); } catch (e) {}
     hideChip();
     clearPending();
     renderList();
@@ -1670,7 +1778,18 @@
 
   // -------------------------------------------- whole-conversation capture
   function textOf(el) {
-    return (el.innerText || '').replace(/ /g, ' ').trim();
+    var t = (el.innerText || '').replace(/\u00a0/g, ' ').trim();
+    // innerText stops at an editing block's boundary, so a card rendered into a
+    // textarea reads as empty. Its value is the text that is on the screen.
+    if (el.querySelectorAll) {
+      var fields = el.querySelectorAll('textarea,input[type="text"]');
+      for (var i = 0; i < fields.length; i++) {
+        if (isComposerEl(fields[i])) continue;
+        var v = String(fields[i].value == null ? '' : fields[i].value).trim();
+        if (v && t.indexOf(v) < 0) t = t ? t + '\n' + v : v;
+      }
+    }
+    return t;
   }
 
   // Light DOM→markdown for rendered chat messages: block structure only
@@ -1725,6 +1844,17 @@
         return;
       }
       if (tag === 'TABLE') { pushText(textOf(node)); return; }
+      // An editing block the site dropped into the conversation — a canvas card
+      // in a textarea, a message swapped into an edit box — keeps its words in
+      // .value, where innerText never looks. Read them out, so the export holds
+      // the passage rather than a hole where it was.
+      if (tag === 'TEXTAREA' || tag === 'INPUT') {
+        if (!isComposerEl(node)) {
+          var v = String(node.value == null ? '' : node.value).replace(/\s+$/, '');
+          v.split(/\n{2,}/).forEach(function (para) { pushText(para.trim()); });
+        }
+        return;
+      }
       var child = node.firstChild;
       while (child) { walk(child); child = child.nextSibling; }
     }
@@ -2184,6 +2314,40 @@
     picked = pickTurns.map(function (_, i) { return i >= pickTurns.length - n; });
     renderPicks();
   }
+  function paintFlatBtn() {
+    $('flatBtn').textContent = flatCards ? 'Cards: text' : 'Cards: editable';
+  }
+  $('flatBtn').addEventListener('click', function () {
+    flatCards = !flatCards;
+    saveMap(FLAT_KEY, { on: flatCards });
+    if (flatCards) { flattenCards(); toast('Cards read as text — tap to select in them', 2400); }
+    else { unflattenCards(); toast('Cards left editable, as the site made them', 2400); }
+    paintFlatBtn();
+  });
+
+  // No console on a phone, so the page's own answer has to be copyable. This is
+  // what Assay can see here, in the shape a bug report needs.
+  $('diagBtn').addEventListener('click', function () {
+    var lines = ['Assay ' + VERSION + ' on ' + location.hostname];
+    try {
+      var f = window.__assay._find();
+      f.strategies.forEach(function (st, i) { lines.push('finder ' + (i + 1) + ': ' + st.n + '  ' + st.sel.slice(0, 60)); });
+      lines.push('by shape: ' + f.structural + ' | used: ' + f.found + ' | roles: ' + (f.roles || []).join(','));
+      if (f.sample && f.sample.length) lines.push('page shape: ' + f.sample.join('  '));
+      lines.push('cards: ' + (flatCards ? 'text' : 'editable'));
+      window.__assay._editables().forEach(function (e) {
+        lines.push('editable ' + e.tag + (e.id ? '#' + e.id : '') + (e.testid ? '[' + e.testid + ']' : '') +
+          ' .' + e.cls + ' composer=' + e.composer + ' inThread=' + e.inConversation +
+          ' selectable=' + e.selectable + ' "' + e.text + '"');
+      });
+    } catch (err) { lines.push('diagnosis failed: ' + err.message); }
+    var report = lines.join('\n');
+    copyText(report).then(function (ok) {
+      if (ok) toast('Diagnosis copied — paste it into a bug report', 2600);
+      else manualCopy(report);
+    });
+  });
+
   $('pickAll').addEventListener('click', function () { setLast(pickTurns.length); });
   $('pickNone').addEventListener('click', function () { setLast(0); });
   $('pickLast2').addEventListener('click', function () { setLast(2); });
@@ -2371,6 +2535,7 @@
 
   // The thread memory this used to keep is gone; clear what it left behind.
   try { localStorage.removeItem('assay.convoLog.v1'); } catch (e) {}
+  paintFlatBtn();
   updatePill();
   syncViewport();
   window.__assay = {
@@ -2412,6 +2577,29 @@
           if (!seen[k]) { seen[k] = true; out.sample.push(k); }
           if (out.sample.length >= 25) break;
         }
+      }
+      return out;
+    },
+    // Every editable on the page and what Assay decided it is. A composer we
+    // treat as conversation is a chat you cannot type in, so this is the one
+    // question worth being able to answer without the page in front of you.
+    _editables: function () {
+      var out = [];
+      var eds = document.querySelectorAll(EDITABLE_SEL);
+      for (var i = 0; i < eds.length && i < 20; i++) {
+        var ed = eds[i];
+        if (ed === host || host.contains(ed)) continue;
+        var cls = ((ed.className && ed.className.indexOf ? ed.className : '') + '').slice(0, 40);
+        out.push({
+          tag: ed.tagName.toLowerCase(),
+          id: ed.id || '',
+          testid: (ed.getAttribute('data-testid') || ''),
+          cls: cls,
+          composer: isComposerEl(ed),
+          inConversation: (function () { try { return inConversation(ed); } catch (e) { return 'err'; } })(),
+          selectable: !!pageEditable(ed),
+          text: ((ed.value != null ? ed.value : ed.textContent) || '').trim().slice(0, 40)
+        });
       }
       return out;
     },

@@ -250,3 +250,32 @@ Append only. Never edit an entry after the fact.
   DOM entirely and reads the site's own conversation API, which would also fix
   the window problem. It would mean a request to a server, which the privacy
   note currently promises never happens, so it is a decision and not a patch.
+- **2026-09-12** — two reports, one root. Typing stopped working in Claude's
+  message box, and ChatGPT's canvas cards could not be selected in.
+  The message box first, because it is the worse of the two: an editable Assay
+  could not recognise as the composer was treated as a passage. That default is
+  the wrong way up. Recognising a composer means knowing the names a site
+  currently uses, and Claude had just changed them — so every tap in the message
+  box was read as a selection. A site can rename whatever it likes; what it
+  cannot do is put its composer inside one of the conversation's own turns. So
+  the question is now asked the other way: an editable is a passage only if it
+  sits in the thread, and one we cannot place is left alone. The worst case
+  became a card you cannot select in rather than a chat you cannot type in.
+  I could not reproduce the reported symptom in a mock — typing worked there on
+  the broken version, with a mouse and with a touch tap both — so the inversion
+  is a safety fix, not a verified one. Which is why the tray now has ⓘ Copy
+  diagnosis: there is no console on a phone, and everything I was guessing at
+  is a string the user can paste.
+  Then the cards. ChatGPT renders a document into the middle of a reply as an
+  editor, and an editor fights a tap: caret, keyboard, the browser's own word
+  selection. A card inside the conversation is now marked not-editable, which
+  changes no words and moves nothing, and it reads like the prose around it.
+  Reversible from the tray, never applied to the message box, to an editable we
+  cannot place, or to one being typed in. Its text lands in exports too — a
+  textarea keeps its words in .value, where innerText has never looked, so those
+  cards had been exporting as holes.
+  Three bugs fell out of writing it down: `[contenteditable]` matches
+  `contenteditable="false"`, so the flattened card still read as an edit box and
+  a tap bounced off it; and both `findBlock` and `findContainer` still named
+  `.font-claude-message`, which since the rename meant a selection in a Claude
+  reply could not grow past one paragraph. Nobody had reported that one.
