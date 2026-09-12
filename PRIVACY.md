@@ -17,14 +17,13 @@ reads a reply.
 On those pages it reads:
 
 - **the passage you tap or select**, so it can highlight and collect it;
-- **the messages the page renders**, when you ask for them. Both chat sites
-  show only part of a long conversation at a time — older messages load as you
-  scroll, and some stay collapsed until opened — so Assay keeps a copy of what
-  it has been shown (see below), and an export is then the conversation rather
-  than the part of it on screen at that moment. It reads the thread when you
-  open the tray, when you press ⭳, and while the export picker is open; with
-  the picker closed it does not read the page at all. It reads only what the
-  page itself has already rendered: nothing is requested from any server.
+- **the messages the page renders**, at the moment you press ⭳ .md or ⭳ .txt.
+  Both chat sites show only part of a long conversation at a time — older
+  messages load as you scroll, and some stay collapsed until opened — so an
+  export holds what the page was showing when you asked for it. Nothing is
+  read at any other time, and nothing is kept between exports. It reads only
+  what the page itself has already rendered: nothing is requested from any
+  server.
 
 It reads nothing on any other website, and it does not run anywhere else.
 
@@ -32,15 +31,11 @@ It reads nothing on any other website, and it does not run anywhere else.
 
 - **The fragments you collect and the notes you write**, into your browser's
   local storage on the site itself.
-- **A copy of the conversation as the page has shown it to you**, into that
-  same local storage, so ⭳ .md and ⭳ .txt can export more than the handful of
-  messages still on screen. This is written only when Assay reads the thread —
-  on export, on opening the tray, or while the export picker is open. You
-  can see exactly what is held, message by message, in the picker that opens
-  when you export — tap a message's size to read it. It is capped, and the
-  least recently opened conversations are dropped first. Messages the
-  conversation no longer contains — edited, regenerated or deleted away — are
-  dropped as soon as the page shows that they are gone.
+- **Nothing of the conversation itself.** Versions 0.14 to 0.17 kept a copy of
+  the thread in local storage so exports could outrun what the page had
+  loaded; 0.18.0 removed that, and removes any copy an earlier version left
+  behind the next time it runs. The conversation is read only into the file you
+  asked for.
 - **The composed prompt**, into that site's own message box, when you press
   ↗ To composer. Nothing is ever sent for you — you review it and press send.
 - **A copy of that text to your clipboard**, when you press ⧉ Copy notes on a
@@ -49,14 +44,13 @@ It reads nothing on any other website, and it does not run anywhere else.
 
 ## Where your data lives, and how to remove it
 
-Fragments, notes and the remembered conversation are stored under keys
-beginning `assay.` in the local storage of the site, grouped per conversation
-— or per file, on GitHub. They stay on the device that made them: they are
-not synced, backed up or transmitted.
+Fragments and notes are stored under keys beginning `assay.` in the local
+storage of the site, grouped per conversation — or per file, on GitHub. They
+stay on the device that made them: they are not synced, backed up or
+transmitted.
 
 To remove them, delete individual fragments with ✕, or use **Clear** in the
-tray. Clearing the site's storage (below) also forgets the remembered
-conversations. Clear keeps one restorable copy of the batch — so an accidental clear
+tray. Clear keeps one restorable copy of the batch — so an accidental clear
 is undoable — until the next clear or send replaces it.
 
 **Uninstalling the extension does not by itself erase this data**, because it

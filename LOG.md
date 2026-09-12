@@ -208,3 +208,22 @@ Append only. Never edit an entry after the fact.
   mocked page with no compositor, no real text shaping and a synthetic scroller
   cannot tell you what a phone feels, so "0 scans" was true and meaningless.
   What a phone feels is whether anything of ours is attached at all.
+- **2026-09-12** — the lag was never in the scanning. Highlights were drawn as
+  boxes positioned over the words and repositioned on every scroll event, and on
+  a phone scrolling belongs to the compositor: the content moves, and boxes
+  computed on the main thread arrive a frame or more later. "The highlight stays
+  where it was" was a literal description of the mechanism, and three rounds of
+  making the redraw cheaper could not touch it, because the redraw was never
+  the thing that was late. Highlights are now painted by the browser into the
+  text itself — CSS custom highlights — so they move with the glyphs they sit
+  on and scrolling stops involving us at all. Positioned boxes remain for
+  browsers without the API, where they are the only option.
+  The thread memory went with it, as asked. It was the second time; it had cost
+  three releases; and what it bought — an export outrunning what the page had
+  loaded — was never worth a selection that lags. Export is what the page is
+  showing when you press the button. 499 lines deleted, 129 added.
+  The measurement that matters turned out not to be how long anything takes but
+  whether we are attached at all: scrolling 1600px past three highlights,
+  typing 120 characters, and a reply streaming in now each ask Assay for zero
+  frames of work. Zero is a number a mock can measure honestly; milliseconds
+  on a synthetic scroller are not.

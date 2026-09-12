@@ -61,10 +61,9 @@ non-affiliation line.
 > - ⭳ Export the conversation as Markdown or plain text, your fragments and
 >   notes appended — a verbatim local record, named after the chat. Choose
 >   which messages go in: tap ↓ on one to take it and everything after
-> - Long threads export whole: leave the picker open and scroll back, and it
->   picks up the older messages the site had not loaded yet
-> - Nothing runs in the background — no observers, no polling — so typing and
->   scrolling in the chat stay exactly as fast as they were
+>   (scroll back first for the older messages the site hasn't loaded yet)
+> - Nothing runs in the background and nothing is stored between exports, so
+>   typing and scrolling in the chat stay exactly as fast as they were
 > - Every conversation keeps its own list
 >
 > **Private by design**

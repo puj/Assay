@@ -4,15 +4,9 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.17.0';
+  var VERSION = '0.18.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
-  // What the page has shown us of this conversation, remembered so an export
-  // is not limited to whatever happens to be rendered at the time.
-  var LOG_MAP_KEY = 'assay.convoLog.v1';
-  var LOG_MAX_MSGS = 500;        // per conversation
-  var LOG_MAX_CONVOS = 12;       // least recently seen is dropped first
-  var LOG_MAX_CHARS = 900000;    // rough ceiling before localStorage complains
   var LEGACY_KEY = 'deepdive.fragments.v1';
   var MIN_SEL_LEN = 4;
   // GitHub and Gist are a reading surface with no composer: the same tap
@@ -295,7 +289,6 @@
         '<button class="btn minor" id="pickNone">None</button>' +
         '<button class="btn minor" id="pickLast2">Last 2</button>' +
         '<button class="btn minor" id="pickLast6">Last 6</button>' +
-        '<button class="btn minor" id="pickRebuild" title="Forget what is remembered and read the page again">&#x21bb;</button>' +
       '</div>' +
       '<div class="actions last">' +
         '<button class="btn go" id="pickGo">&#x2B07; Download</button>' +
@@ -336,7 +329,6 @@
       saveMap(MAP_KEY, map);
     }
     fragments = normalize(list);
-    loadLog();
     anchorSig = '';
     updatePill();
     redraw();
@@ -657,7 +649,7 @@
     return null;
   }
 
-  function rectsForSpan(blocks, start, end) {
+  function rangeForSpan(blocks, start, end) {
     var a = domPointAbs(blocks, start);
     var b = domPointAbs(blocks, end);
     if (!a || !b) return null;
@@ -665,11 +657,17 @@
       var r = document.createRange();
       r.setStart(a.node, a.offset);
       r.setEnd(b.node, b.offset);
-      var rects = r.getClientRects();
-      return rects.length ? rects : null;
+      return r;
     } catch (e) {
       return null;
     }
+  }
+
+  function rectsForSpan(blocks, start, end) {
+    var r = rangeForSpan(blocks, start, end);
+    if (!r) return null;
+    var rects = r.getClientRects();
+    return rects.length ? rects : null;
   }
 
   function caretPoint(x, y) {
@@ -735,6 +733,70 @@
     return null;
   }
 
+  // A highlight drawn as a box laid over the words has to be moved every time
+  // the page scrolls, and on a phone scrolling is not the main thread's to keep
+  // up with: the content is moved by the compositor and our boxes arrive a
+  // frame or more later. That is precisely what "the highlight stays where it
+  // was" looks like, and no amount of making the redraw cheaper fixes it,
+  // because the redraw is never the thing that is late.
+  //
+  // So where the browser will paint a highlight into the text itself, it does.
+  // A custom highlight is part of how the text is drawn: it moves with the
+  // glyphs it sits on, for free, and scrolling stops involving us at all. The
+  // boxes remain for browsers without it.
+  var NATIVE_HL = (function () {
+    try { return !!(window.Highlight && window.CSS && CSS.highlights); } catch (e) { return false; }
+  })();
+  var hlStyleEl = null, hlNames = {};
+  // These styles have to live in the page's own stylesheet: a highlight paints
+  // the page's text, which our shadow root has no say over.
+  function installHighlightStyles() {
+    if (hlStyleEl && hlStyleEl.isConnected) return;
+    var css = '';
+    for (var i = 0; i < PALETTE.length; i++) {
+      css += '::highlight(assay-' + i + '){background-color:rgba(' + PALETTE[i].rgb + ',.26);color:inherit}' +
+             '::highlight(assay-on-' + i + '){background-color:rgba(' + PALETTE[i].rgb + ',.48);color:inherit}';
+    }
+    hlStyleEl = document.createElement('style');
+    hlStyleEl.setAttribute('data-assay', 'highlights');
+    hlStyleEl.textContent = css;
+    (document.head || document.documentElement).appendChild(hlStyleEl);
+  }
+  function applyHighlights(groups) {
+    installHighlightStyles();
+    var k;
+    for (k in groups) {
+      if (!groups.hasOwnProperty(k)) continue;
+      var h = new Highlight();
+      for (var i = 0; i < groups[k].length; i++) h.add(groups[k][i]);
+      CSS.highlights.set('assay-' + k, h);
+      hlNames[k] = true;
+    }
+    for (k in hlNames) {
+      if (hlNames.hasOwnProperty(k) && !groups[k]) {
+        CSS.highlights.delete('assay-' + k);
+        delete hlNames[k];
+      }
+    }
+  }
+  // How many spans are painted right now, however they are being painted.
+  function paintedCount() {
+    if (!NATIVE_HL) return hlLayer.children.length;
+    var n = 0;
+    for (var k in hlNames) {
+      if (!hlNames.hasOwnProperty(k)) continue;
+      var h = CSS.highlights.get('assay-' + k);
+      if (h) n += h.size;
+    }
+    return n;
+  }
+  function clearNativeHighlights() {
+    for (var k in hlNames) {
+      if (hlNames.hasOwnProperty(k)) CSS.highlights.delete('assay-' + k);
+    }
+    hlNames = {};
+  }
+
   function paintRects(rects, color) {
     for (var i = 0; i < rects.length; i++) {
       var rc = rects[i];
@@ -788,6 +850,7 @@
   }
 
   function redraw() {
+    if (NATIVE_HL) return redrawNative();
     hlLayer.textContent = '';
     var editRects = null, editMark = null;
     // Session marks for already-collected fragments (drop dead ones quietly).
@@ -812,6 +875,45 @@
     if (!rects) { pending = null; bar.classList.remove('show'); return; }
     paintRects(rects, 'rgba(' + PALETTE[nextColorIdx()].rgb + ',.34)');
     placeBar(pending.blocks, pending.start, rects);
+  }
+
+  // The same work, with the painting handed to the browser: no rects are
+  // measured for a mark at all, so this costs nothing a scroll could be waiting
+  // on. Only the bar needs to know where it is, and only while it is up.
+  function redrawNative() {
+    var groups = {}, editRange = null, editMark = null;
+    function put(key, range) { (groups[key] || (groups[key] = [])).push(range); }
+    marks = marks.filter(function (m) {
+      if (!m.blocks.some(function (b) { return b.el.isConnected; })) return false;
+      var r = rangeForSpan(m.blocks, m.start, m.end);
+      if (!r) return false;
+      var on = m.fid === editing;
+      put((on ? 'on-' : '') + m.colorIdx, r);
+      if (on) { editRange = r; editMark = m; }
+      return true;
+    });
+    if (editing && !editMark) { editing = null; paintBar(); }
+    if (editing) {
+      applyHighlights(groups);
+      placeBar(editMark.blocks, editMark.start, editRange.getClientRects());
+      return;
+    }
+    if (!pending) {
+      applyHighlights(groups);
+      bar.classList.remove('show');
+      return;
+    }
+    var pr = rangeForSpan(pending.blocks, pending.start, pending.end);
+    var prRects = pr && pr.getClientRects();
+    if (!prRects || !prRects.length) {
+      pending = null;
+      applyHighlights(groups);
+      bar.classList.remove('show');
+      return;
+    }
+    put('on-' + nextColorIdx(), pr);
+    applyHighlights(groups);
+    placeBar(pending.blocks, pending.start, prRects);
   }
 
   function placeNotebox() {
@@ -1257,81 +1359,20 @@
   }
   setInterval(maybeReanchor, 1200);
 
-  // Reading the thread off the page means reading every message on it, and
-  // that forces the browser to lay the page out. Done in the background — on
-  // every scroll, on every streamed token — it is felt: the selection you are
-  // dragging stops moving with your finger. So it is not done in the
-  // background. The conversation is read at the moments you ask for it and at
-  // no others: when the sheet opens, when you press a download, and while the
-  // export list is open in front of you. That last one is the only time
-  // watching the page pays for itself — scrolling back through old messages
-  // with the count in the header climbing is how they get loaded — and it
-  // costs nothing the rest of the time, because the rest of the time there is
-  // nothing attached.
-  var scanTimer = null, idleHandle = 0, scanCount = 0;
-  function runScan() {
-    clearTimeout(scanTimer);
-    scanTimer = null;
-    idleHandle = 0;
-    scanCount++;
-    try { scanTranscript(false); } catch (e) {}
-  }
-  function scanWhenIdle() {
-    if (idleHandle) return;
-    if (window.requestIdleCallback) {
-      idleHandle = window.requestIdleCallback(runScan, { timeout: 900 });
-    } else {
-      idleHandle = 1;
-      setTimeout(runScan, 60);
-    }
-  }
-  function scanAfterQuiet() {
-    if (scanTimer || idleHandle) return;
-    scanTimer = setTimeout(scanWhenIdle, 300);
-  }
-  // Attached when the export list opens, gone the moment it closes.
-  var pickWatch = null;
-  function onPickScroll(e) {
-    if (e.target === host || (e.target && e.target.nodeType === 1 && host.contains(e.target))) return;
-    scanAfterQuiet();
-  }
-  function watchWhilePicking(on) {
-    if (IS_GITHUB) return;
-    if (on) {
-      if (pickWatch) return;
-      window.addEventListener('scroll', onPickScroll, true);
-      pickWatch = setInterval(scanWhenIdle, 1500);
-    } else {
-      if (!pickWatch) return;
-      window.removeEventListener('scroll', onPickScroll, true);
-      clearInterval(pickWatch);
-      pickWatch = null;
-      clearTimeout(scanTimer);
-      scanTimer = null;
-      if (idleHandle && window.cancelIdleCallback) {
-        try { window.cancelIdleCallback(idleHandle); } catch (e) {}
-        idleHandle = 0;
-      }
-    }
-  }
-  if (!IS_GITHUB) {
-    // Whatever is pending goes to storage before the page can be taken away.
-    window.addEventListener('pagehide', function () { if (logDirty) saveLog(true); });
-    document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'hidden' && logDirty) saveLog(true);
-    });
-  }
   setTimeout(maybeReanchor, 400);
 
   var redrawScheduled = false;
   function scheduleRedraw() {
-    if ((!pending && !marks.length) || redrawScheduled) return;
+    if (redrawScheduled) return;
+    if (!pending && !editing && (NATIVE_HL || !marks.length)) return;
     redrawScheduled = true;
     requestAnimationFrame(function () {
       redrawScheduled = false;
       redraw();
     });
   }
+  // Where the browser paints the highlights, a scroll with nothing but marks on
+  // screen has nothing for us to do, and the listener returns on its first line.
   window.addEventListener('scroll', scheduleRedraw, true);
   window.addEventListener('resize', scheduleRedraw);
 
@@ -1426,7 +1467,6 @@
   // still collect while it's open, and the pill rides above it as a toggle.
   function openSheet() {
     sheetOpen = true;
-    try { scanTranscript(false); } catch (e) {}
     hideChip();
     clearPending();
     renderList();
@@ -1687,88 +1727,11 @@
     return out;
   }
 
-  // ------------------------------------------------- remembering the thread
-  // Both sites render only a window of a long conversation: messages load as
-  // you scroll and some stay collapsed until opened. Whatever the page has
-  // shown us is kept here, so ⭳ .md exports the thread rather than the part
-  // of it that happens to be on screen. Nothing is fetched to build this —
-  // it is only ever what the page itself rendered.
-  var logMsgs = [];        // [{k, role, b: [blocks], len, ts}]
-  var logDirty = false;
-  var lastLogSave = 0;
-  var lastScanY = null;
-  var logTimer = null;
-
-  function loadLog() {
-    var entry = loadJSON(LOG_MAP_KEY, {})[convo];
-    logMsgs = (entry && entry.msgs) || [];
-    logDirty = false;
-    lastScanY = null;
-  }
-
-  function saveLog(force) {
-    if (!logMsgs.length) return;
-    var now = Date.now();
-    // Streaming fires constantly; write at most every couple of seconds
-    // unless the caller needs it on disk now. A deferred write is scheduled
-    // rather than left to whenever something next happens to scan.
-    if (!force && now - lastLogSave < 2000) {
-      logDirty = true;
-      clearTimeout(logTimer);
-      logTimer = setTimeout(function () { if (logDirty) saveLog(true); }, 2000 - (now - lastLogSave));
-      return;
-    }
-    clearTimeout(logTimer);
-    lastLogSave = now;
-    logDirty = false;
-    var map = loadJSON(LOG_MAP_KEY, {});
-    map[convo] = { ts: now, msgs: logMsgs.slice(-LOG_MAX_MSGS) };
-    // Keep the store small enough that it never crowds out the fragments,
-    // which matter more: drop whole conversations, least recently seen first.
-    var keys = Object.keys(map);
-    keys.sort(function (a, b) { return (map[b].ts || 0) - (map[a].ts || 0); });
-    var kept = {}, chars = 0;
-    keys.forEach(function (k, i) {
-      if (i >= LOG_MAX_CONVOS) return;
-      var size = JSON.stringify(map[k]).length;
-      if (chars + size > LOG_MAX_CHARS && k !== convo) return;
-      chars += size;
-      kept[k] = map[k];
-    });
-    saveMap(LOG_MAP_KEY, kept);
-  }
-
-  // The element that actually scrolls the conversation: the window on some
-  // layouts, an inner pane on others. Saying "none" matters — a scroller we
-  // have not found tells us nothing about where in the thread we are.
-  function scrollerFor(el) {
-    var n = el && el.parentElement;
-    while (n && n !== document.body && n !== document.documentElement) {
-      var o = '';
-      try { o = window.getComputedStyle(n).overflowY; } catch (e) {}
-      if (o === 'auto' || o === 'scroll' || o === 'overlay') return n;
-      n = n.parentElement;
-    }
-    var doc = document.scrollingElement || document.documentElement;
-    return doc && doc.scrollHeight > doc.clientHeight + 20 ? doc : null;
-  }
-
-  // Identity is the text itself. A site's own message id is used when it
-  // offers one, but it is never the only thing relied on: a message is the
-  // same message when it reads the same, or when one reading opens exactly
-  // like the other — which is what a collapsed message, one truncated behind
-  // "Show more", and one still streaming all look like.
-  function hashOf(str) {
-    var h = 5381, i = str.length;
-    while (i) h = (h * 33 ^ str.charCodeAt(--i)) >>> 0;
-    return h.toString(36);
-  }
+  // ---------------------------------------------------- finding the messages
   function normText(t) { return (t || '').replace(/\s+/g, ' ').trim(); }
-  var HEAD_LEN = 200;   // enough of an opening to tell two messages apart
   var textCache = (typeof WeakMap === 'function') ? new WeakMap() : {
     get: function () {}, set: function () {}   // no cache, just slower
   };
-  var ANCHOR_MIN = 40;  // shorter than this, a message is too common to trust
 
   // Where the messages are. Each site is tried in turn, and the first that
   // finds anything wins; the last is a net for markup we have not seen.
@@ -1808,293 +1771,33 @@
       var seen = textCache.get(el);
       if (!seen || seen.tl !== tl || seen.kids !== kids) {
         var norm = normText(el.innerText || '');
-        seen = { tl: tl, kids: kids, h: hashOf(norm), head: norm.slice(0, HEAD_LEN), len: norm.length };
+        seen = { tl: tl, kids: kids, head: norm.slice(0, 60), len: norm.length };
         textCache.set(el, seen);
       }
       return {
         el: el,
         role: finder.user(el) ? 'You' : 'Assistant',
         id: (el.getAttribute && el.getAttribute('data-message-id')) || '',
-        h: seen.h, head: seen.head, len: seen.len
+        head: seen.head, len: seen.len
       };
     });
   }
 
-  // Two readings of the same message: keep whichever holds more of it. Less
-  // text is a narrower view — collapsed, truncated, mid-stream — not a newer
-  // version, so the fuller one stands.
-  function bestOf(oldRec, newRec) {
-    var keep = newRec;
-    if (newRec.len < oldRec.len) {
-      // Shorter. That is a narrower view of the same message only if it reads
-      // like its opening — collapsed, cut off behind "Show more", or still
-      // streaming. Text that diverges instead is an edit, and an edit is the
-      // message now, however much of it there is.
-      var head = newRec.head.replace(/[\s…\.]+$/, '');
-      if (head && oldRec.head.indexOf(head) === 0) keep = oldRec;
-    }
-    return {
-      id: newRec.id || oldRec.id || '',
-      role: newRec.role || oldRec.role,
-      h: keep.h, head: keep.head, len: keep.len, b: keep.b,
-      ts: Date.now()
-    };
-  }
-
-  // Line up the window the page is showing against what we already hold.
-  // Text is what identifies a message, which means messages that read the
-  // same — "Yes." twice in a thread — are indistinguishable on their own.
-  // They are told apart by their neighbours: anything matching only one
-  // remembered message anchors the window, and an ambiguous one can then only
-  // be the copy sitting between its anchors, in the same run as them. A
-  // message with nowhere plausible to go is a new message, not a second
-  // sighting of an old one.
-  function alignTurns(stored, scanned) {
-    var at = [], claimed = {}, i;
-    for (i = 0; i < scanned.length; i++) at.push(-1);
-    if (!stored.length || !scanned.length) return at;
-
-    var byId = {}, byHead = {};
-    stored.forEach(function (m, idx) {
-      if (m.id) (byId[m.id] = byId[m.id] || []).push(idx);
-      var hk = m.role + '\u0000' + m.head;
-      (byHead[hk] = byHead[hk] || []).push(idx);
-    });
-    var candidatesFor = function (sc) {
-      if (sc.id && byId[sc.id]) return byId[sc.id];
-      return byHead[sc.role + '\u0000' + sc.head] || [];
-    };
-    var runOf = function (idx) { return typeof stored[idx].r === 'number' ? stored[idx].r : 0; };
-
-    // Anchors: the ones that can only be one thing. A single candidate is
-    // only proof when the text is distinctive enough to be worth trusting —
-    // "Yes." matching the one "Yes." we happen to hold proves nothing, since
-    // the second one is exactly what we have not seen yet. An id from the
-    // site settles it whatever the length.
-    var anchors = [];
-    scanned.forEach(function (sc, n) {
-      var cands = candidatesFor(sc);
-      if (cands.length !== 1) return;
-      if (sc.id || sc.len >= ANCHOR_MIN) anchors.push({ i: n, idx: cands[0] });
-    });
-    // Anchors within one run have to read in order; where they do not, the
-    // largest run of them that does is kept. Anchors in *different* runs
-    // disagreeing is not a conflict but the news that those runs are
-    // adjacent, so they are all kept — that is what lets runs be stitched.
-    var byRun = {};
-    anchors.forEach(function (a) {
-      var r = runOf(a.idx);
-      (byRun[r] = byRun[r] || []).push(a);
-    });
-    Object.keys(byRun).forEach(function (r) {
-      var list = byRun[r], best = [], seq = [];
-      list.forEach(function (a, n) {
-        seq[n] = [a];
-        for (var m = 0; m < n; m++) {
-          if (list[m].idx < a.idx && seq[m].length + 1 > seq[n].length) seq[n] = seq[m].concat([a]);
-        }
-        if (seq[n].length > best.length) best = seq[n];
-      });
-      best.forEach(function (a) { at[a.i] = a.idx; claimed[a.idx] = true; });
-    });
-
-    // The rest: each can only be a remembered message lying between the
-    // anchors on either side of it, and in the run those anchors belong to.
-    for (i = 0; i < scanned.length; i++) {
-      if (at[i] >= 0) continue;
-      var lo = -1, hi = stored.length, j;
-      for (j = i - 1; j >= 0; j--) if (at[j] >= 0) { lo = at[j]; break; }
-      for (j = i + 1; j < scanned.length; j++) if (at[j] >= 0) { hi = at[j]; break; }
-      var want = lo >= 0 ? runOf(lo) : (hi < stored.length ? runOf(hi) : null);
-      var list2 = candidatesFor(scanned[i]);
-      for (j = 0; j < list2.length; j++) {
-        var idx = list2[j];
-        if (claimed[idx]) continue;
-        if (idx <= lo || idx >= hi) continue;
-        if (want !== null && runOf(idx) !== want) continue;
-        at[i] = idx; claimed[idx] = true; break;
-      }
-    }
-    return at;
-  }
-
-  // Fold the window in. Nothing is ever removed: a message we hold but cannot
-  // see may be one the page has not loaded, and losing a real message is a
-  // worse failure than keeping one the conversation has moved past.
-  //
-  // Order is the harder half. A window that overlaps what we hold says where
-  // it belongs. A window that shares nothing with it — a jump to another part
-  // of the thread — says nothing at all, so it is kept as a separate run, in
-  // order within itself, and the moment some later window overlaps two runs
-  // it has proved they are adjacent and in what order, and they are stitched
-  // into one. Scrolling normally always overlaps, so this only matters for
-  // jumps, and it resolves itself as soon as the gap is crossed.
-  function runsOf(list) {
-    var ids = {}, next = 0;
-    list.forEach(function (m) {
-      if (typeof m.r !== 'number') m.r = 0;
-      if (!ids[m.r]) ids[m.r] = true;
-      if (m.r >= next) next = m.r + 1;
-    });
-    return next;
-  }
-
-  function mergeTurns(stored, scanned, ctx) {
-    if (!scanned.length) return stored;
-    ctx = ctx || {};
-    var nextRun = runsOf(stored);
-    if (!stored.length) {
-      return scanned.map(function (m) { m.r = 0; return m; });
-    }
-    var at = alignTurns(stored, scanned), i;
-    var matched = [];
-    at.forEach(function (idx) { if (idx >= 0) matched.push(idx); });
-
-    if (!matched.length) {
-      // Nowhere to attach it. Keep it whole, as its own run, and put it where
-      // the scroller says — or, with nothing to go on, in front: new messages
-      // arrive next to what we already hold, so a window sharing nothing with
-      // it is almost always older ground.
-      scanned.forEach(function (m) { m.r = nextRun; });
-      return ctx.later ? stored.concat(scanned) : scanned.concat(stored);
-    }
-
-    // Which runs this window touches, in the order it touches them: that is
-    // the order those runs go in.
-    var order = [], seenRun = {};
-    at.forEach(function (idx) {
-      if (idx < 0) return;
-      var r = stored[idx].r;
-      if (!seenRun[r]) { seenRun[r] = true; order.push(r); }
-    });
-    var work = stored;
-    if (order.length > 1) {
-      var joined = [], others = [], placed = false;
-      // the stitched runs take the place of the first of them
-      order.forEach(function (r) {
-        stored.forEach(function (m) { if (m.r === r) joined.push(m); });
-      });
-      stored.forEach(function (m) {
-        if (seenRun[m.r]) {
-          if (!placed) { others = others.concat(joined); placed = true; }
-          return;
-        }
-        others.push(m);
-      });
-      work = others;
-      var oneRun = order[0];
-      joined.forEach(function (m) { m.r = oneRun; });
-      at = alignTurns(work, scanned);   // positions moved; line up again
-    }
-
-    var insertBefore = {}, replace = {}, pending = [], trailing = null, cursor = -1;
-    var run = work[at.filter(function (x) { return x >= 0; })[0]].r;
-    scanned.forEach(function (sc, n) {
-      var idx = at[n];
-      sc.r = run;
-      if (idx < 0) { pending.push(sc); return; }
-      if (pending.length) {
-        insertBefore[idx] = (insertBefore[idx] || []).concat(pending);
-        pending = [];
-      }
-      replace[idx] = bestOf(work[idx], sc);
-      replace[idx].r = run;
-      cursor = idx;
-    });
-    if (pending.length) trailing = pending;
-
-    var out = [];
-    work.forEach(function (m, n) {
-      if (insertBefore[n]) out = out.concat(insertBefore[n]);
-      out.push(replace[n] || m);
-      if (trailing && n === cursor) { out = out.concat(trailing); trailing = null; }
-    });
-    if (trailing) out = out.concat(trailing);
-
-    // A site id is unique by definition; the same one twice is one message.
-    var seenId = {};
-    return out.filter(function (m) {
-      if (!m.id) return true;
-      if (seenId[m.id]) return false;
-      seenId[m.id] = true;
-      return true;
-    });
-  }
-
-  // Read the page and remember it. The costly part is turning a message into
-  // blocks, so that is done only when its text has actually changed — an
-  // unchanged message is recognised by its hash and left alone.
-  function scanTranscript(force) {
-    if (IS_GITHUB) return;
-    var live = liveTurns();
-    if (!live.length) return;
-    var at = alignTurns(logMsgs, live);
-    var changed = false;
-    var scanned = live.map(function (t, i) {
-      var old = at[i] >= 0 ? logMsgs[at[i]] : null;
-      if (old && old.h === t.h && (old.b || []).length) {
-        return old;                                   // nothing about it moved
-      }
-      changed = true;
-      return {
-        id: t.id, role: t.role, h: t.h, head: t.head, len: t.len,
-        b: serializeBlocks(t.el), ts: Date.now()
-      };
-    });
-    var scroller = scrollerFor(live[0].el);
-    var y = scroller ? scroller.scrollTop : 0;
-    var lastDir = (scroller && lastScanY !== null && y > lastScanY) ? 'down' : 'up';
-    lastScanY = scroller ? y : null;
-    var merged = mergeTurns(logMsgs, scanned, { later: !!scroller && lastDir === 'down' });
-    // A merge that only puts two runs in the right order changes neither the
-    // number of messages nor a word of any of them, and it still has to be
-    // kept — throwing it away would leave the thread in the order it happened
-    // to be read in, and undo the stitch on the very next scan.
-    var moved = merged.length !== logMsgs.length;
-    if (!moved) {
-      for (var n = 0; n < merged.length; n++) {
-        if (merged[n] !== logMsgs[n]) { moved = true; break; }
-      }
-    }
-    logMsgs = merged;
-    if (changed || moved) {
-      saveLog(force);
-      refreshPickerIfOpen();
-    } else if (logDirty) {
-      saveLog(false);
-    }
-  }
-
-  // What a turn's body is, whether it is on the page or only remembered — and
-  // when it is both, whichever of the two holds more of the message. Being on
-  // screen does not make a copy the better one: it may be the collapsed view
-  // of something we already hold in full.
+  // A message's body, read off the page. Blocks are what the exporters want:
+  // paragraphs in prose, lines in a code view.
   function turnBlocks(t) {
-    var remembered = t.b || [];
-    if (!(t.el && t.el.isConnected)) return remembered.slice();
-    var liveNorm = normText(t.el.innerText || '');
-    if (remembered.length && liveNorm.length <= (t.len || 0)) return remembered.slice();
+    if (!(t.el && t.el.isConnected)) return [];
     return serializeBlocks(t.el);
   }
 
-  // Everything we hold, each still tied to its element where the page happens
-  // to be showing it. Reading this does not scan — the picker leans on it
-  // while the page moves underneath.
+  // The conversation as the page is rendering it, which is what an export is.
+  // Both sites load a long thread in pieces, so this is the part of it that is
+  // on screen — scroll back and open what is collapsed, and it is more.
   function conversationTurns() {
     var live = liveTurns();
-    if (!logMsgs.length) {
-      return live.length ? live.map(function (t) {
-        return { role: t.role, el: t.el, b: null, len: t.len, onPage: true, key: t.id || (t.role + t.head) };
-      }) : null;
-    }
-    var at = alignTurns(logMsgs, live), onPage = {};
-    at.forEach(function (idx, i) { if (idx >= 0) onPage[idx] = live[i]; });
-    return logMsgs.map(function (m, i) {
-      var t = onPage[i];
-      return {
-        role: m.role, el: t ? t.el : null, b: m.b, len: m.len,
-        onPage: !!t, key: m.id || (m.role + m.head)
-      };
+    if (!live.length) return null;
+    return live.map(function (t, i) {
+      return { role: t.role, el: t.el, len: t.len, key: t.id || (i + ':' + t.role + t.head) };
     });
   }
 
@@ -2115,7 +1818,6 @@
         return { role: role, el: el, key: i + ':' + role };
       });
     }
-    scanTranscript(true);
     return conversationTurns();
   }
 
@@ -2220,9 +1922,7 @@
   // layout, and this list runs to as many rows as the thread is long, so the
   // message itself is fetched only for the row you open.
   function turnHint(t) {
-    var held = (t.b || []).join('\n\n');
-    var live = (t.el && t.el.isConnected) ? normText(t.el.textContent || '') : '';
-    var src = live.length > held.length ? live : held;
+    var src = (t.el && t.el.isConnected) ? normText(t.el.textContent || '') : '';
     return { len: src.length, prev: pickPreview(src.slice(0, 600)) };
   }
   function countLabel(n) {
@@ -2246,16 +1946,15 @@
     $('pickTitle').textContent = n === pickTurns.length
       ? 'All ' + n + ' messages'
       : n + ' of ' + pickTurns.length + ' messages';
-    var recalled = 0;
-    pickTurns.forEach(function (t) { if (t.el === null) recalled++; });
     var hint = $('pickHint');
     if (!pickTurns.length) {
-      hint.textContent = 'No messages found on this page. ↻ reads it again.';
+      hint.textContent = 'No messages found on this page.';
       return;
     }
-    hint.textContent = recalled
-      ? recalled + ' of these ' + (recalled === 1 ? 'is' : 'are') + ' remembered from earlier — not on the page now. Tap a size to read what was captured.'
-      : 'Tap ↓ on a message to take it and everything after it, or a size to read what was captured.';
+    // Both sites load a long thread in pieces, so the list is as long as the
+    // page has made it. Saying so is better than quietly exporting less.
+    hint.textContent = 'Tap ↓ on a message to take it and everything after it, or a size to read it. ' +
+      'Older messages appear here once the page has loaded them.';
     $('pickGo').disabled = !n && !fragments.length;
     $('pickGo').innerHTML = '&#x2B07; Download .' + pickExt;
   }
@@ -2339,7 +2038,7 @@
         r.sig = sig;
         r.who.textContent = t.role === 'You' ? 'You' : (t.role === 'Assistant' ? BRAND : t.role);
         r.prev.textContent = hint.prev || '(no text)';
-        r.meta.textContent = countLabel(hint.len) + ' \u00b7 ' + (t.el === null ? 'remembered' : 'on screen');
+        r.meta.textContent = countLabel(hint.len);
         // The text it holds is the old copy of a message that has since grown.
         if (!r.full.hidden) r.full.textContent = turnText(t) || '(nothing captured)';
         else r.full.textContent = '';
@@ -2369,58 +2068,6 @@
   $('pickNone').addEventListener('click', function () { setLast(0); });
   $('pickLast2').addEventListener('click', function () { setLast(2); });
   $('pickLast6').addEventListener('click', function () { setLast(6); });
-  $('pickRebuild').addEventListener('click', rebuildFromPage);
-
-  // Keeping up with the page while the picker is open: the list is rebuilt
-  // from what we now hold, and what you had chosen, opened and scrolled to
-  // survives it — the count in the header moving is the point, since that is
-  // what tells you a scroll is picking more of the conversation up.
-  // What the list would look like, in one string: if this has not moved,
-  // rebuilding it would redraw the same rows for nothing.
-  var pickSig = '';
-  function pickerSig(turns) {
-    var out = [turns.length];
-    for (var i = 0; i < turns.length; i++) {
-      out.push(turns[i].key + ':' + (turns[i].len || 0) + ':' + (turns[i].el ? 1 : 0));
-    }
-    return out.join('|');
-  }
-  function refreshPickerIfOpen() {
-    if (!picker || !picker.classList.contains('show')) return;
-    var turns = conversationTurns();
-    if (!turns || !turns.length) return;
-    var sig = pickerSig(turns);
-    if (sig === pickSig) return;
-    pickSig = sig;
-    var was = {};
-    pickTurns.forEach(function (t, i) { was[t.key] = picked[i]; });
-    var atEnd = pickList.scrollTop + pickList.clientHeight >= pickList.scrollHeight - 24;
-    var keepTop = pickList.scrollTop;
-    pickTurns = turns;
-    picked = turns.map(function (t) { return was[t.key] === undefined ? true : was[t.key]; });
-    renderPicks();
-    pickList.scrollTop = atEnd ? pickList.scrollHeight : keepTop;
-  }
-
-  // Forget this conversation and take it again from the page. The memory is
-  // the only record of messages that have scrolled away, so it is never
-  // cleared behind your back — but a thread edited elsewhere can leave it
-  // holding a version that no longer exists, and this is the way out.
-  function rebuildFromPage() {
-    logMsgs = [];
-    lastScanY = null;
-    var map = loadJSON(LOG_MAP_KEY, {});
-    delete map[convo];
-    saveMap(LOG_MAP_KEY, map);
-    scanTranscript(true);
-    var turns = conversationTurns() || [];
-    pickTurns = turns;
-    picked = turns.map(function () { return true; });
-    pickOpen = {};
-    pickSig = pickerSig(turns);
-    renderPicks();
-    toast('Rebuilt from the page — ' + turns.length + ' message' + (turns.length === 1 ? '' : 's'), 2400);
-  }
 
   function openPicker(turns, ext, mime) {
     hideChip();
@@ -2430,19 +2077,14 @@
     pickMime = mime;
     pickOpen = {};
     picked = turns.map(function () { return true; });
-    pickSig = pickerSig(turns);
     closeSheet();
     picker.classList.add('show');
     updatePill();
     renderPicks();
     // The recent end is what you came for, so start there.
     pickList.scrollTop = pickList.scrollHeight;
-    // Scroll the thread behind this list and the list follows — the one place
-    // the page is worth watching, and only for as long as it is up.
-    watchWhilePicking(true);
   }
   function closePicker(reopen) {
-    watchWhilePicking(false);
     picker.classList.remove('show');
     if (reopen) openSheet(); else updatePill();
   }
@@ -2607,20 +2249,19 @@
     });
   });
 
-  loadLog();
+  // The thread memory this used to keep is gone; clear what it left behind.
+  try { localStorage.removeItem('assay.convoLog.v1'); } catch (e) {}
   updatePill();
   syncViewport();
   window.__assay = {
     toggle: toggleSheet,
     version: VERSION,
-    _scan: function () { scanTranscript(false); },
-    _scans: function () { return scanCount; },
     _debug: function () {
       return {
         pending: pending ? { start: pending.start, end: pending.end, scope: pending.scope, text: pendingText() } : null,
         fragments: fragments.map(function (f) { return { text: f.text, note: f.note, notePos: f.notePos, verb: f.verb, colorIdx: f.colorIdx }; }),
         marks: marks.length,
-        log: logMsgs.map(function (m) { return { r: m.r, head: m.head.slice(0, 18), len: m.len }; }),
+        highlights: paintedCount(),
         exportMd: buildConversationMarkdown(getConversation()),
         exportTxt: buildConversationText(getConversation())
       };
