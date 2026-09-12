@@ -279,3 +279,23 @@ Append only. Never edit an entry after the fact.
   a tap bounced off it; and both `findBlock` and `findContainer` still named
   `.font-claude-message`, which since the rename meant a selection in a Claude
   reply could not grow past one paragraph. Nobody had reported that one.
+- **2026-09-12** — the export learned to go and get the conversation. Neither
+  site keeps a long thread in the page: older messages are built only when you
+  scroll to them, long ones stay folded until asked, so what an export can see
+  is a window. 0.14–0.17 answered that by remembering messages as they went
+  past, in storage, all the time — and that cost selection its responsiveness,
+  so it came out. This is the other answer and the honest one: ⤓ in the picker
+  walks the thread to the top, unfolds what is folded, reads each screenful on
+  the way back down and stitches the windows by finding the run where one ends
+  the way the next begins. It blocks, counts as it goes, has a Stop, restores
+  the scroll position, and leaves nothing running and nothing stored. Picking
+  which messages to include still works, and a choice made before the walk
+  survives it.
+  Three bugs on the way, two of them old. Picker rows were keyed by their text,
+  so a thread with "Yes." in it twice rendered one row and exported one message
+  — the harvest returned both and the list threw one away. Two key schemes
+  disagreed, so every tick was forgotten the moment the walk finished. And the
+  guard meant to keep the unfolder away from anything that submits was
+  `b.type === 'submit'`, which a bare <button> reports whether or not it is in
+  a form — it rejected every "Show more" there is, which is to say the unfolder
+  had never once unfolded anything.

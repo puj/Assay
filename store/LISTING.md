@@ -61,7 +61,8 @@ non-affiliation line.
 > - ⭳ Export the conversation as Markdown or plain text, your fragments and
 >   notes appended — a verbatim local record, named after the chat. Choose
 >   which messages go in: tap ↓ on one to take it and everything after
->   (scroll back first for the older messages the site hasn't loaded yet)
+>   ⤓ walks the whole thread first — scrolling and unfolding — so a long
+>   conversation exports whole, not just the part still on screen
 > - Nothing runs in the background and nothing is stored between exports, so
 >   typing and scrolling in the chat stay exactly as fast as they were
 > - Every conversation keeps its own list

@@ -24,6 +24,14 @@ On those pages it reads:
   read at any other time, and nothing is kept between exports. It reads only
   what the page itself has already rendered: nothing is requested from any
   server.
+- **the rest of the conversation, if you press ⤓ Get the whole conversation.**
+  That scrolls the thread to the top and back down for you, and clicks controls
+  that unfold a message — only inside a message, only ones whose label says they
+  unfold something, never anything that could send, delete, retry or navigate,
+  and never inside a form. It runs only while you watch it, has a Stop, and
+  leaves the page where it found it. Still nothing is requested from any server:
+  the scrolling makes the site load its own messages, and Assay reads what
+  appears.
 
 It reads nothing on any other website, and it does not run anywhere else.
 

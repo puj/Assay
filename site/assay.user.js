@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.19.0
+// @version      0.20.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.19.0';
+  var VERSION = '0.20.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -239,6 +239,11 @@
     '.manual{margin:10px 14px 0;display:none}' +
     '.manual.show{display:block}' +
     '.manual textarea{width:100%;height:120px;border:1px solid #cbd5e1;border-radius:10px;padding:10px;font-size:13px;background:#fff;color:#0f172a}' +
+    '.scan{display:none;align-items:center;gap:8px;margin:0 14px 8px;padding:8px 10px;border-radius:8px;' +
+      'background:#1f2937;color:#f9fafb;font-size:13px}' +
+    '.scan.show{display:flex}' +
+    '.scan span{flex:1;min-width:0}' +
+    '.btn.wide{width:100%;justify-content:center}' +
     '.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:60px;background:#111827;color:#f9fafb;' +
       'padding:10px 18px;border-radius:999px;font-size:14px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.35);' +
       'opacity:0;transition:opacity .25s;pointer-events:none;z-index:30;max-width:86vw;text-align:center}' +
@@ -307,6 +312,11 @@
       '<header><h2 id="pickTitle">Include in the file</h2>' +
         '<button class="close" id="pickClose">&#x2715;</button></header>' +
       '<p class="hint" id="pickHint">Tap &#x2193; on a message to take it and everything after it.</p>' +
+      '<div class="scan" id="scan"><span id="scanMsg">Reading the conversation&hellip;</span>' +
+        '<button class="btn minor" id="scanStop">Stop</button></div>' +
+      '<div class="actions">' +
+        '<button class="btn wide" id="pickFull">&#x2913; Get the whole conversation</button>' +
+      '</div>' +
       '<div class="picks" id="pickList"></div>' +
       '<div class="actions">' +
         '<button class="btn minor" id="pickAll">All</button>' +
@@ -2053,11 +2063,23 @@
     });
   }
 
+  // What names a message across a re-read: not where it sits, since the walk
+  // moves everything, and not its length, since unfolding one changes that.
+  function turnKey(t) {
+    return t.id || (t.role + '|' + t.head);
+  }
+
   // A message's body, read off the page. Blocks are what the exporters want:
   // paragraphs in prose, lines in a code view.
   function turnBlocks(t) {
-    if (!(t.el && t.el.isConnected)) return [];
-    return serializeBlocks(t.el);
+    if (t.el && t.el.isConnected) {
+      var live = serializeBlocks(t.el);
+      // A harvested copy can hold more than the page does now: the message was
+      // expanded when it was read and the site has since collapsed it again.
+      if (t.b && t.b.join('\n').length > live.join('\n').length) return t.b.slice();
+      return live;
+    }
+    return t.b ? t.b.slice() : [];
   }
 
   // The conversation as the page is rendering it, which is what an export is.
@@ -2067,7 +2089,152 @@
     var live = liveTurns();
     if (!live.length) return null;
     return live.map(function (t, i) {
-      return { role: t.role, el: t.el, len: t.len, key: t.id || (i + ':' + t.role + t.head) };
+      return { role: t.role, el: t.el, len: t.len, key: turnKey(t) };
+    });
+  }
+
+  // ------------------------------------------------- harvesting the whole thing
+  // Neither site keeps a long conversation in the page. Older messages are only
+  // built when you scroll back to them, and long ones stay folded behind "show
+  // more" until asked — so what an export can see is a window, and the rest of
+  // the thread does not exist as far as the document is concerned.
+  //
+  // Assay used to answer that by remembering messages as they went past, in
+  // storage, all the time. That cost the thing the product is for: watching the
+  // page made selection lag. This is the other answer, and the honest one. It
+  // does the work once, when you ask for it, in front of you: it walks the
+  // thread to the top, opens what is folded, reads each window on the way back
+  // down, and stitches them. It blocks — there is a progress line and a Stop —
+  // and when it ends nothing is left running and nothing is left stored.
+  function scrollerFor(el) {
+    var n = el;
+    while (n && n !== document.body && n !== document.documentElement) {
+      var o = '';
+      try { o = getComputedStyle(n).overflowY; } catch (e) {}
+      if ((o === 'auto' || o === 'scroll' || o === 'overlay') && n.scrollHeight > n.clientHeight + 40) return n;
+      n = n.parentElement;
+    }
+    var de = document.scrollingElement || document.documentElement;
+    return (de && de.scrollHeight > de.clientHeight + 40) ? de : null;
+  }
+
+  // Opening what the site folded. Only inside a message, only controls that
+  // say they unfold something, and never anything that could send, delete or
+  // navigate — a harvest that posts a message would be unforgivable.
+  var EXPAND_RE = /\b(show|see|read|view)\s+(more|all|full|original|the rest)\b|\bcontinue reading\b|\bexpand\b|\bshow full\b/i;
+  var EXPAND_NEVER = /\b(send|submit|delete|remove|retry|regenerate|stop|share|copy|edit|branch|fork|report|sign|log ?out|upgrade)\b/i;
+  function expandOnce() {
+    var opened = 0, turns = liveTurns(), i, j;
+    for (i = 0; i < turns.length; i++) {
+      var el = turns[i].el;
+      // <details> opens without a click, which is the safest way to open it.
+      var dets = el.querySelectorAll('details:not([open])');
+      for (j = 0; j < dets.length; j++) { dets[j].open = true; opened++; }
+      var btns = el.querySelectorAll('button,[role="button"],summary');
+      for (j = 0; j < btns.length; j++) {
+        var b = btns[j];
+        if (host.contains(b) || b.getAttribute('data-assay-exp')) continue;
+        // Not `b.type === 'submit'`: a bare <button> reports "submit" whether or
+        // not it is in a form, and that quietly rejected every "Show more"
+        // there is. What matters is whether there is a form for it to submit.
+        if (b.closest('form')) continue;
+        var label = ((b.innerText || b.textContent || '') + ' ' +
+          (b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '')).trim();
+        if (label.length > 40) continue;               // a paragraph is not a control
+        if (b.tagName !== 'SUMMARY' && !EXPAND_RE.test(label)) continue;
+        if (EXPAND_NEVER.test(label)) continue;
+        b.setAttribute('data-assay-exp', '1');         // once each, whatever happens
+        try { b.click(); opened++; } catch (e) {}
+      }
+    }
+    return opened;
+  }
+
+  // One window of the thread, with its text taken now — the element will be
+  // gone from the page by the time the walk reaches the bottom.
+  function windowTurns() {
+    return liveTurns().map(function (t) {
+      return {
+        role: t.role, el: t.el, id: t.id, head: t.head, len: t.len,
+        b: serializeBlocks(t.el), key: turnKey(t)
+      };
+    });
+  }
+  function sameTurn(a, b) {
+    if (a.id && b.id) return a.id === b.id;
+    return a.role === b.role && a.head === b.head;
+  }
+  // Windows overlap, so the join is found rather than assumed: the longest run
+  // where what we hold ends the same way the new window begins. Matching a whole
+  // run instead of message-by-message is what keeps two identical messages two
+  // messages — "Yes." twice in a thread is not one message seen twice.
+  function stitch(acc, win) {
+    if (!acc.length) return win.slice();
+    if (!win.length) return acc;
+    var max = Math.min(acc.length, win.length), k = 0, n, i, ok;
+    for (n = max; n > 0; n--) {
+      ok = true;
+      for (i = 0; i < n; i++) {
+        if (!sameTurn(acc[acc.length - n + i], win[i])) { ok = false; break; }
+      }
+      if (ok) { k = n; break; }
+    }
+    for (i = 0; i < k; i++) {
+      var have = acc[acc.length - k + i], now = win[i];
+      // The same message, read again after it was unfolded: keep the fuller.
+      if ((now.len || 0) > (have.len || 0)) acc[acc.length - k + i] = now;
+    }
+    return acc.concat(win.slice(k));
+  }
+
+  var HARVEST_MS = 90000;        // a ceiling, so a strange page cannot hang here
+  var harvestStop = false;
+  function harvest(onProgress) {
+    return new Promise(function (resolve) {
+      var first = liveTurns()[0];
+      if (!first) return resolve([]);
+      var sc = scrollerFor(first.el);
+      if (!sc) return resolve(windowTurns());      // nothing scrolls; this is all of it
+      var began = Date.now(), startTop = sc.scrollTop, acc = [];
+      var lastHeight = -1, still = 0;
+      function done() {
+        sc.scrollTop = startTop;                   // put the page back where it was
+        resolve(acc);
+      }
+      function spent() { return harvestStop || Date.now() - began > HARVEST_MS; }
+
+      // Up: keep asking for the top until the page stops giving us more of it.
+      function up() {
+        if (spent()) return downFrom(0);
+        expandOnce();
+        sc.scrollTop = 0;
+        setTimeout(function () {
+          var h = sc.scrollHeight;
+          if (sc.scrollTop <= 2 && h === lastHeight) {
+            if (++still >= 2) return downFrom(0);   // twice unchanged is the top
+          } else { still = 0; }
+          lastHeight = h;
+          onProgress('Finding the start of the conversation…', acc.length);
+          up();
+        }, 420);
+      }
+      // Down: read each window, stitching as we go.
+      function downFrom(pos) {
+        sc.scrollTop = pos;
+        setTimeout(function () {
+          expandOnce();
+          setTimeout(function () {
+            acc = stitch(acc, windowTurns());
+            onProgress('Reading the conversation…', acc.length);
+            var bottom = sc.scrollHeight - sc.clientHeight;
+            if (spent() || pos >= bottom - 2) return done();
+            // Less than a screen, so consecutive windows always overlap and
+            // the join can be found.
+            downFrom(Math.min(bottom, pos + Math.max(120, sc.clientHeight * 0.7)));
+          }, 160);
+        }, 240);
+      }
+      up();
     });
   }
 
@@ -2193,7 +2360,9 @@
   // message itself is fetched only for the row you open.
   function turnHint(t) {
     var src = (t.el && t.el.isConnected) ? normText(t.el.textContent || '') : '';
-    return { len: src.length, prev: pickPreview(src.slice(0, 600)) };
+    var held = t.b ? t.b.join('\n\n') : '';
+    if (held.length > src.length) src = held;
+    return { len: src.length, prev: pickPreview(src.slice(0, 600)), off: !(t.el && t.el.isConnected) };
   }
   function countLabel(n) {
     return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k characters' : n + ' characters';
@@ -2221,10 +2390,14 @@
       hint.textContent = 'No messages found on this page.';
       return;
     }
-    // Both sites load a long thread in pieces, so the list is as long as the
-    // page has made it. Saying so is better than quietly exporting less.
-    hint.textContent = 'Tap ↓ on a message to take it and everything after it, or a size to read it. ' +
-      'Older messages appear here once the page has loaded them.';
+    // Both sites load a long thread in pieces, so this list is only as long as
+    // the page has made it. Saying so, and saying what to do about it, is
+    // better than quietly exporting less than you asked for.
+    hint.textContent = IS_GITHUB
+      ? 'Tap ↓ to take this and everything after it, or a size to read it.'
+      : 'This is what the page has loaded. ⤓ walks the whole thread first — ' +
+        'it scrolls and unfolds, and takes a moment. Tap ↓ on a message to take it ' +
+        'and everything after, or a size to read it.';
     $('pickGo').disabled = !n && !fragments.length;
     $('pickGo').innerHTML = '&#x2B07; Download .' + pickExt;
   }
@@ -2299,7 +2472,11 @@
   function renderPicks() {
     var seen = {}, node = pickList.firstChild;
     pickTurns.forEach(function (t, i) {
-      var key = t.key || (i + ':' + t.role);
+      // A row is identified by where it sits, not by what it says. Two messages
+      // that read the same are two messages, and keying rows by their text made
+      // the second quietly replace the first — a thread with "Yes." in it twice
+      // lost one of them between the harvest and the list.
+      var key = i + ':' + (t.key || t.role);
       var r = pickRows[key] || (pickRows[key] = buildRow(key));
       seen[key] = true;
       var hint = turnHint(t);
@@ -2308,7 +2485,7 @@
         r.sig = sig;
         r.who.textContent = t.role === 'You' ? 'You' : (t.role === 'Assistant' ? BRAND : t.role);
         r.prev.textContent = hint.prev || '(no text)';
-        r.meta.textContent = countLabel(hint.len);
+        r.meta.textContent = countLabel(hint.len) + (hint.off ? ' · scrolled away' : '');
         // The text it holds is the old copy of a message that has since grown.
         if (!r.full.hidden) r.full.textContent = turnText(t) || '(nothing captured)';
         else r.full.textContent = '';
@@ -2368,6 +2545,48 @@
     });
   });
 
+  // The one deliberate, blocking action: walk the thread and take all of it.
+  // Everything you had chosen survives it, because what you chose is a message
+  // and the messages are still the same messages afterwards.
+  var harvesting = false;
+  function setScan(on, msg) {
+    $('scan').classList.toggle('show', !!on);
+    if (msg) $('scanMsg').textContent = msg;
+    $('pickFull').disabled = !!on;
+    $('pickGo').disabled = !!on;
+  }
+  $('scanStop').addEventListener('click', function () { harvestStop = true; $('scanMsg').textContent = 'Stopping…'; });
+  $('pickFull').addEventListener('click', function () {
+    if (harvesting || IS_GITHUB) return;
+    harvesting = true;
+    harvestStop = false;
+    var was = {};
+    pickTurns.forEach(function (t, i) { was[t.key] = picked[i]; });
+    setScan(true, 'Reading the conversation…');
+    harvest(function (msg, n) {
+      $('scanMsg').textContent = msg + (n ? '  ' + n + ' message' + (n === 1 ? '' : 's') : '');
+    }).then(function (turns) {
+      harvesting = false;
+      setScan(false);
+      if (!turns || !turns.length) { toast('Found nothing to read on this page'); return; }
+      var before = pickTurns.length;
+      pickTurns = turns;
+      picked = turns.map(function (t) { return was[t.key] === undefined ? true : was[t.key]; });
+      pickOpen = {};
+      renderPicks();
+      pickList.scrollTop = pickList.scrollHeight;
+      var gained = turns.length - before;
+      toast(harvestStop
+        ? 'Stopped — ' + turns.length + ' messages'
+        : (gained > 0 ? 'Found ' + gained + ' more — ' + turns.length + ' messages in all'
+                      : 'That was already all of it — ' + turns.length + ' messages'), 2600);
+    }, function () {
+      harvesting = false;
+      setScan(false);
+      toast('Could not read the whole conversation');
+    });
+  });
+
   $('pickAll').addEventListener('click', function () { setLast(pickTurns.length); });
   $('pickNone').addEventListener('click', function () { setLast(0); });
   $('pickLast2').addEventListener('click', function () { setLast(2); });
@@ -2375,6 +2594,8 @@
 
   function openPicker(turns, ext, mime) {
     hideChip();
+    $('pickFull').hidden = IS_GITHUB;      // a file is not a thread to walk
+    setScan(false);
     clearPending();
     pickTurns = turns;
     pickExt = ext;
@@ -2623,6 +2844,7 @@
       }
       return out;
     },
+    _harvest: function (onProgress) { harvestStop = false; return harvest(onProgress || function () {}); },
     _debug: function () {
       return {
         pending: pending ? { start: pending.start, end: pending.end, scope: pending.scope, text: pendingText() } : null,

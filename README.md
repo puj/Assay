@@ -176,10 +176,13 @@ Yes. ⭳ .md saves the conversation, roles, text and code blocks, with your frag
 **Can I export only part of a conversation?**
 Yes. ⭳ .md and ⭳ .txt open a picker listing every message with its author and a preview. Take all of them, use All / None / Last 2 / Last 6, tap rows individually, or tap **↓** on a message to take it and everything after it. The file records what it holds — "messages 19–30 of 30" — so a partial export is never mistaken for the whole thread.
 
-**Why does an export sometimes miss older messages?**
-Both sites load a long conversation in pieces: older messages appear only as you scroll to them, and some sections stay collapsed until opened, and an export can only ever see what is rendered. So scroll back and open what you want before you press ⭳. The picker shows you exactly what it found, with each message's length, before anything is written.
+**How do I export a whole long conversation?**
+Press ⭳ .md or ⭳ .txt, then **⤓ Get the whole conversation** in the picker. It walks the thread to the top, unfolds anything behind a "show more", reads each screenful on the way back down and stitches them together — then puts the page back where you were reading. It blocks while it runs, shows a count as it climbs, and has a Stop. Everything you'd already ticked or unticked survives it.
 
-Assay used to keep a running copy of the thread so this wasn't necessary. It was removed in 0.18.0: keeping that copy current meant watching the page, and watching the page made selection lag on a phone. Selection is the product; a complete export of a thread you scrolled away from an hour ago is not worth it.
+Without it the picker shows only what the page has built, which for a long thread is the last handful of messages — both sites load older ones only as you scroll to them.
+
+**Why isn't that automatic?**
+It was, once, in a different form: 0.14–0.17 kept a running copy of the thread by watching the page. That cost the thing the product is for — watching the page made selection lag on a phone — so it came out in 0.18.0. This is the honest version of the same idea: the work happens once, when you ask for it, in front of you, and when it ends nothing is left running and nothing is left stored.
 
 **Does it slow the page down?**
 It isn't attached to the page. No observers, no polling, no scroll handlers, nothing stored between exports. Scrolling past collected highlights, typing a follow-up and a reply streaming in each ask Assay for zero frames of work. Highlights are painted by the browser into the text (CSS custom highlights) rather than drawn as boxes positioned over it, so scrolling never involves Assay at all; browsers without that API get the boxes, and those do have to be repositioned.
