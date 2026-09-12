@@ -177,7 +177,7 @@ Yes. ⭳ .md saves the conversation, roles, text and code blocks, with your frag
 Yes. ⭳ .md and ⭳ .txt open a picker listing every message with its author and a preview. Take all of them, use All / None / Last 2 / Last 6, tap rows individually, or tap **↓** on a message to take it and everything after it. The file records what it holds — "messages 19–30 of 30" — so a partial export is never mistaken for the whole thread.
 
 **How do I export a whole long conversation?**
-Press ⭳ .md or ⭳ .txt, then **⤓ Get the whole conversation** in the picker. It walks the thread to the top, unfolds anything behind a "show more", reads each screenful on the way back down and stitches them together — then puts the page back where you were reading. It blocks while it runs, shows a count as it climbs, and has a Stop. Everything you'd already ticked or unticked survives it.
+Press ⭳ .md or ⭳ .txt, then **⤓ Walk the whole thread** in the picker — the quiet amber button, deliberately not the big blue one, since it takes over the page for a while and asks before it starts. It walks the thread to the top, unfolds anything behind a "show more", reads each screenful on the way back down and stitches them together — then puts the page back where you were reading. It blocks while it runs, shows a count as it climbs, and has a Stop. Everything you'd already ticked or unticked survives it.
 
 Without it the picker shows only what the page has built, which for a long thread is the last handful of messages — both sites load older ones only as you scroll to them.
 
@@ -188,10 +188,10 @@ It was, once, in a different form: 0.14–0.17 kept a running copy of the thread
 It isn't attached to the page. No observers, no polling, no scroll handlers, nothing stored between exports. Scrolling past collected highlights, typing a follow-up and a reply streaming in each ask Assay for zero frames of work. Highlights are painted by the browser into the text (CSS custom highlights) rather than drawn as boxes positioned over it, so scrolling never involves Assay at all; browsers without that API get the boxes, and those do have to be repositioned.
 
 **ChatGPT put a document inside the reply and I can't select in it.**
-You can now. Those canvas cards are rendered as editors, and an editor fights a tap: the caret lands, the keyboard comes up, the browser runs its own word selection. Assay marks a card inside the conversation as not-editable, so it reads as ordinary conversation text and selects like the prose around it — no words are changed, and its text now lands in exports too. If you'd rather edit the card in place, **Cards: editable** in the tray hands it straight back to the site. The message box is never touched by this.
+You can now. Those canvas cards are rendered as editors, and an editor fights a tap: the caret lands, the keyboard comes up, the browser runs its own word selection. Assay marks a card inside the conversation as not-editable, so it reads as ordinary conversation text and selects like the prose around it — no words are changed, and its text now lands in exports too. If you'd rather edit the card in place, **⚙ → Cards: editable** in the tray hands it straight back to the site. The message box is never touched by this.
 
 **Something isn't working and I'm on a phone with no console.**
-Open the tray and press **ⓘ Copy diagnosis**. It copies what Assay can see on that page — which message-finder matched, how many turns it found, and what it thinks each editable on the page is — which is what a bug report needs.
+Open the tray, press **⚙**, then **ⓘ Copy diagnosis**. It copies what Assay can see on that page — which message-finder matched, how many turns it found, and what it thinks each editable on the page is — which is what a bug report needs.
 
 **Does it auto-send anything?**
 Never. ↗ To composer only fills the message box.

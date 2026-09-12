@@ -24,7 +24,7 @@ On those pages it reads:
   read at any other time, and nothing is kept between exports. It reads only
   what the page itself has already rendered: nothing is requested from any
   server.
-- **the rest of the conversation, if you press ⤓ Get the whole conversation.**
+- **the rest of the conversation, if you press ⤓ Walk the whole thread** (and confirm).
   That scrolls the thread to the top and back down for you, and clicks controls
   that unfold a message — only inside a message, only ones whose label says they
   unfold something, never anything that could send, delete, retry or navigate,

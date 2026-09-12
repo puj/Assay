@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.20.0
+// @version      0.20.1
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.20.0';
+  var VERSION = '0.20.1';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -239,11 +239,23 @@
     '.manual{margin:10px 14px 0;display:none}' +
     '.manual.show{display:block}' +
     '.manual textarea{width:100%;height:120px;border:1px solid #cbd5e1;border-radius:10px;padding:10px;font-size:13px;background:#fff;color:#0f172a}' +
-    '.scan{display:none;align-items:center;gap:8px;margin:0 14px 8px;padding:8px 10px;border-radius:8px;' +
-      'background:#1f2937;color:#f9fafb;font-size:13px}' +
-    '.scan.show{display:flex}' +
-    '.scan span{flex:1;min-width:0}' +
-    '.btn.wide{width:100%;justify-content:center}' +
+    // Two strips that sit under the hint: one asks before the walk, one reports
+    // during it. Neither is ever on screen at the same time as the other.
+    '.strip{display:none;align-items:center;gap:8px;margin:0 16px 10px;padding:9px 11px;' +
+      'border-radius:10px;font-size:12.5px;line-height:1.35}' +
+    '.strip.show{display:flex}' +
+    '.strip span{flex:1;min-width:0}' +
+    '.strip .btn{flex:0 0 auto;padding:8px 11px;font-size:13px;border-radius:9px}' +
+    '.strip.work{background:#1e293b;color:#e2e8f0}' +
+    '.strip.ask{background:#fffbeb;color:#92400e;border:1px solid #fcd34d}' +
+    // The walk moves the page about, so it is coloured like something that
+    // does, and sized like the secondary action it is — never mistakable for
+    // Download, which is the button you actually came here for.
+    '.actions.aside{justify-content:flex-end;padding:0 16px 6px}' +
+    '.actions.off{display:none}' +
+    '.btn.warn{flex:0 0 auto;background:transparent;border:1px solid #d97706;color:#b45309;' +
+      'font-size:13px;font-weight:600;padding:9px 12px;border-radius:10px}' +
+    '.btn.minor.cog{flex:0 0 auto;padding:11px 13px;font-size:15px}' +
     '.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:60px;background:#111827;color:#f9fafb;' +
       'padding:10px 18px;border-radius:999px;font-size:14px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.35);' +
       'opacity:0;transition:opacity .25s;pointer-events:none;z-index:30;max-width:86vw;text-align:center}' +
@@ -257,6 +269,8 @@
       '.frag .pos.verb{background:#1e293b;color:#64748b}' +
       '.frag .pos.verb.on{background:#38bdf8;color:#0c1220}' +
       '.btn.minor{background:#334155;color:#cbd5e1}' +
+      '.btn.warn{border-color:#a16207;color:#fbbf24}' +
+      '.strip.ask{background:#3a2c07;color:#fde68a;border-color:#854d0e}' +
       '.empty{color:#94a3b8}' +
       '.manual textarea{background:#1e293b;border-color:#475569;color:#e2e8f0}' +
       '.pick .row{background:#1e293b;border-color:#334155}' +
@@ -299,8 +313,9 @@
         '<button class="btn minor" id="clearBtn">Clear</button>' +
         '<button class="btn minor" id="mdBtn">&#x2B07; .md</button>' +
         '<button class="btn minor" id="txtBtn">&#x2B07; .txt</button>' +
+        '<button class="btn minor cog" id="cogBtn" title="Settings">&#x2699;</button>' +
       '</div>' +
-      '<div class="actions">' +
+      '<div class="actions actions-settings off" id="settingsRow">' +
         '<button class="btn minor" id="flatBtn" title="Read cards the site made editable as ordinary text">Cards: text</button>' +
         '<button class="btn minor" id="diagBtn" title="Copy what Assay can see on this page">&#x24D8; Copy diagnosis</button>' +
       '</div>' +
@@ -312,10 +327,14 @@
       '<header><h2 id="pickTitle">Include in the file</h2>' +
         '<button class="close" id="pickClose">&#x2715;</button></header>' +
       '<p class="hint" id="pickHint">Tap &#x2193; on a message to take it and everything after it.</p>' +
-      '<div class="scan" id="scan"><span id="scanMsg">Reading the conversation&hellip;</span>' +
+      '<div class="strip ask" id="askFull">' +
+        '<span>This scrolls the thread to the top and unfolds messages as it goes. It takes a moment.</span>' +
+        '<button class="btn minor" id="fullNo">Cancel</button>' +
+        '<button class="btn warn" id="fullYes">Walk it</button></div>' +
+      '<div class="strip work" id="scan"><span id="scanMsg">Reading the conversation&hellip;</span>' +
         '<button class="btn minor" id="scanStop">Stop</button></div>' +
-      '<div class="actions">' +
-        '<button class="btn wide" id="pickFull">&#x2913; Get the whole conversation</button>' +
+      '<div class="actions aside" id="fullRow">' +
+        '<button class="btn warn" id="pickFull">&#x2913; Walk the whole thread</button>' +
       '</div>' +
       '<div class="picks" id="pickList"></div>' +
       '<div class="actions">' +
@@ -2393,11 +2412,12 @@
     // Both sites load a long thread in pieces, so this list is only as long as
     // the page has made it. Saying so, and saying what to do about it, is
     // better than quietly exporting less than you asked for.
+    // Two different arrows live in this sheet, so neither is named by its
+    // shape: one is a button you press, the other is on every row.
     hint.textContent = IS_GITHUB
       ? 'Tap ↓ to take this and everything after it, or a size to read it.'
-      : 'This is what the page has loaded. ⤓ walks the whole thread first — ' +
-        'it scrolls and unfolds, and takes a moment. Tap ↓ on a message to take it ' +
-        'and everything after, or a size to read it.';
+      : 'This is what the page has loaded so far. Tap ↓ on a message to take it and ' +
+        'everything after, or a size to read it.';
     $('pickGo').disabled = !n && !fragments.length;
     $('pickGo').innerHTML = '&#x2B07; Download .' + pickExt;
   }
@@ -2511,6 +2531,9 @@
     picked = pickTurns.map(function (_, i) { return i >= pickTurns.length - n; });
     renderPicks();
   }
+  $('cogBtn').addEventListener('click', function () {
+    $('settingsRow').classList.toggle('off');
+  });
   function paintFlatBtn() {
     $('flatBtn').textContent = flatCards ? 'Cards: text' : 'Cards: editable';
   }
@@ -2552,12 +2575,21 @@
   function setScan(on, msg) {
     $('scan').classList.toggle('show', !!on);
     if (msg) $('scanMsg').textContent = msg;
-    $('pickFull').disabled = !!on;
+    $('fullRow').classList.toggle('off', !!on);
     $('pickGo').disabled = !!on;
   }
+  function askFull(on) {
+    $('askFull').classList.toggle('show', !!on);
+    $('fullRow').classList.toggle('off', !!on);
+  }
   $('scanStop').addEventListener('click', function () { harvestStop = true; $('scanMsg').textContent = 'Stopping…'; });
-  $('pickFull').addEventListener('click', function () {
+  // It moves the page around for several seconds, so it asks first. One tap
+  // should not start something you have to sit and watch.
+  $('pickFull').addEventListener('click', function () { if (!harvesting && !IS_GITHUB) askFull(true); });
+  $('fullNo').addEventListener('click', function () { askFull(false); });
+  $('fullYes').addEventListener('click', function () {
     if (harvesting || IS_GITHUB) return;
+    askFull(false);
     harvesting = true;
     harvestStop = false;
     var was = {};
@@ -2594,7 +2626,8 @@
 
   function openPicker(turns, ext, mime) {
     hideChip();
-    $('pickFull').hidden = IS_GITHUB;      // a file is not a thread to walk
+    $('fullRow').classList.toggle('off', IS_GITHUB);   // a file is not a thread to walk
+    askFull(false);
     setScan(false);
     clearPending();
     pickTurns = turns;

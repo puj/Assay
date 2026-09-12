@@ -299,3 +299,13 @@ Append only. Never edit an entry after the fact.
   `b.type === 'submit'`, which a bare <button> reports whether or not it is in
   a form — it rejected every "Show more" there is, which is to say the unfolder
   had never once unfolded anything.
+- **2026-09-12** — the walk button was unreadable: `.btn` carries no background
+  of its own, so a full-width one inherited the sheet's and came out dark text
+  on a dark ground, sitting in the place the eye looks for the primary action.
+  It is now a small amber-outlined button, right-aligned, plainly secondary to
+  Download — coloured like something that does something to the page, because
+  it does: it takes the page over for several seconds, so it asks first, in a
+  strip that replaces itself with the progress line once you agree. Two arrows
+  live in that sheet now, so the hint stopped naming either by its shape.
+  Cards: text and Copy diagnosis were loose in the tray with nothing to group
+  them; they sit behind a ⚙ now, which is the settings control we did not have.
