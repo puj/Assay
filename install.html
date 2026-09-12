@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.18.0
+// @version      0.18.1
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -250,7 +250,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.18.0';
+  var VERSION = '0.18.1';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -1197,7 +1197,13 @@
   // rest of the conversation.
   var RICH_SEL = '[contenteditable="true"],[contenteditable=""]';
   var EDITABLE_SEL = 'textarea,input,' + RICH_SEL;
-  var TURN_SEL = 'article,[data-message-author-role],[data-testid="user-message"],.font-claude-message';
+  // Anything that might be one turn of a conversation. A class name that has
+  // been renamed here costs you the tap, so this is deliberately a superset and
+  // every name either site has used stays in it.
+  var TURN_SEL = 'article,[data-message-author-role],[data-testid="user-message"],' +
+    '[data-testid="assistant-message"],[data-is-streaming],' +
+    '[class*="font-claude-message"],[class*="font-claude-response"],' +
+    '[class*="font-user-message"],[class*="conversation-turn"]';
 
   function isComposerEl(ed) {
     if (!ed || !ed.closest) return false;
@@ -1981,33 +1987,147 @@
 
   // Where the messages are. Each site is tried in turn, and the first that
   // finds anything wins; the last is a net for markup we have not seen.
+  // Does anything about this element say a person wrote it? Used by every
+  // strategy below, because the one thing the sites agree on is that the human
+  // side is labelled and Claude's side is whatever is left.
+  function looksHuman(el) {
+    var tid = (el.getAttribute && el.getAttribute('data-testid')) || '';
+    if (/user|human/i.test(tid)) return true;
+    var cls = (el.className && el.className.indexOf ? el.className : '') + '';
+    return /font-user-message|user-message|human-turn/i.test(cls);
+  }
+  // The same question asked of a turn rather than the labelled element inside
+  // it: when the shape-based finder hands back turn wrappers, the label it is
+  // looking for is usually one level down.
+  function humanish(el) {
+    if (looksHuman(el)) return true;
+    if (!el.querySelector) return false;
+    return !!el.querySelector('[data-testid*="user" i],[data-testid*="human" i],' +
+      '[class*="font-user-message"],[class*="user-message"]');
+  }
   var CHAT_FINDERS = [
     { sel: '[data-message-author-role]',
       user: function (el) { return el.getAttribute('data-message-author-role') === 'user'; } },
-    { sel: '[data-testid="user-message"],.font-user-message,.font-claude-message,[data-testid="assistant-message"]',
-      user: function (el) { return el.matches('[data-testid="user-message"],.font-user-message'); } },
-    { sel: 'main [data-testid*="message" i],main [class*="font-user-message"],main [class*="font-claude-message"]',
-      user: function (el) {
-        return /user|human/i.test(el.getAttribute('data-testid') || '') || /font-user-message/.test(el.className || '');
-      } }
+    // Claude's own markup, every spelling of it we have seen. `font-claude-message`
+    // became `font-claude-response`, which is exactly the kind of rename that
+    // empties an export, so these are matched on a substring rather than whole.
+    { sel: '[data-testid="user-message"],[data-testid="assistant-message"],' +
+           '[class*="font-user-message"],[class*="font-claude-message"],[class*="font-claude-response"]',
+      user: looksHuman },
+    // Anything at all that is labelled like a message, plus the container
+    // Claude marks while a reply is arriving.
+    { sel: 'main [data-testid*="message" i],main [data-is-streaming],' +
+           '[data-testid*="message" i],[data-is-streaming]',
+      user: looksHuman }
   ];
 
-  // The messages the page is rendering right now, in order. Nested matches
-  // keep only the outermost, so one message is never counted twice.
-  function liveTurns() {
-    var found = null, finder = null;
-    for (var i = 0; i < CHAT_FINDERS.length && !found; i++) {
-      var nodes = document.querySelectorAll(CHAT_FINDERS[i].sel);
-      if (nodes.length) { found = Array.prototype.slice.call(nodes); finder = CHAT_FINDERS[i]; }
-    }
-    if (!found) return [];
-    found = found.filter(function (el, idx) {
-      for (var j = 0; j < found.length; j++) {
-        if (j !== idx && found[j].contains(el)) return false;
+  // When no name we know of matches, the conversation is still there to be
+  // found by its shape: a run of sibling elements, each holding a paragraph's
+  // worth of text. The container whose own children hold the most text is the
+  // thread — a nav or a sidebar has many children and little in them. This
+  // costs a walk of the page, so it runs only when every named strategy has
+  // come back empty, which is to say only when the alternative is an empty file.
+  var BLOCK_MIN = 24;        // shorter than this, a child is furniture
+  function structuralTurns() {
+    var root = document.querySelector('main') || document.body;
+    if (!root) return [];
+    var cands = root.querySelectorAll('div,section,ol,ul,article');
+    var best = null, bestChars = 0, bestDepth = -1;
+    for (var i = 0; i < cands.length; i++) {
+      var el = cands[i];
+      if (host.contains(el) || el.contains(host)) continue;
+      if (el.closest('nav,aside,header,footer,[role="navigation"]')) continue;
+      var kids = el.children;
+      if (kids.length < 2) continue;
+      var n = 0, chars = 0;
+      for (var j = 0; j < kids.length; j++) {
+        if (host.contains(kids[j])) continue;
+        if (kids[j].closest(EDITABLE_SEL)) continue;     // the composer is not a turn
+        var len = (kids[j].textContent || '').trim().length;
+        // A child that is mostly a link is a list entry, not a message.
+        if (len >= BLOCK_MIN && !kids[j].matches('a') && !kids[j].querySelector('a[href]:only-child')) {
+          n++; chars += len;
+        }
       }
-      return !host.contains(el);
+      if (n < 2 || !chars) continue;
+      var depth = 0, up = el;
+      while ((up = up.parentElement)) depth++;
+      if (chars > bestChars || (chars === bestChars && depth > bestDepth)) {
+        best = el; bestChars = chars; bestDepth = depth;
+      }
+    }
+    if (!best) return [];
+    var out = [];
+    for (var k = 0; k < best.children.length; k++) {
+      var c = best.children[k];
+      if (host.contains(c) || (c.textContent || '').trim().length < BLOCK_MIN) continue;
+      if (c.closest(EDITABLE_SEL)) continue;
+      out.push(c);
+    }
+    return out;
+  }
+
+  // The messages the page is rendering right now, in order.
+  //
+  // The strategies are scored, not tried in turn until one hits. Taking the
+  // first that matches anything is what made a Claude export come out half
+  // empty: when `font-claude-message` was renamed, the selector naming it
+  // alongside `user-message` still matched — just the human's side of the
+  // conversation — and a strategy that matches one side does not fail, it
+  // silently exports half. So a candidate that sees both sides beats one that
+  // sees more turns of a single side, and the shape-based finder competes on
+  // the same terms rather than waiting for everything else to come back empty.
+  function prune(els) {
+    return els.filter(function (el, idx) {
+      if (host.contains(el)) return false;
+      for (var j = 0; j < els.length; j++) {
+        if (j !== idx && els[j].contains(el)) return false;   // outermost only
+      }
+      return true;
     });
-    return found.map(function (el) {
+  }
+  function score(c) {
+    var you = 0, them = 0;
+    for (var i = 0; i < c.els.length; i++) (c.user(c.els[i]) ? you++ : them++);
+    c.you = you; c.them = them;
+    // One message is a conversation that has only been started, and is complete.
+    c.whole = (you > 0 && them > 0) || c.els.length === 1;
+    return (c.whole ? 1e6 : 0) + c.els.length;
+  }
+  function liveTurns() {
+    var best = null, bestScore = -1, i;
+    for (i = 0; i < CHAT_FINDERS.length; i++) {
+      var els;
+      try { els = Array.prototype.slice.call(document.querySelectorAll(CHAT_FINDERS[i].sel)); }
+      catch (e) { continue; }
+      els = prune(els);
+      if (!els.length) continue;
+      var c = { els: els, user: CHAT_FINDERS[i].user };
+      var sc = score(c);
+      if (sc > bestScore) { best = c; bestScore = sc; }
+      // A named strategy that sees the whole conversation is the answer, and
+      // looking further would only cost a page walk for nothing.
+      if (c.whole && els.length > 1) break;
+    }
+    // Only now, and only because what we have is partial or absent, is the
+    // walk of the page worth its cost.
+    if (!best || !best.whole) {
+      var st = prune(structuralTurns());
+      if (st.length) {
+        // Prefer a label if there is one anywhere in the turn; fall back to the
+        // rhythm only when the page says nothing at all about who spoke, since
+        // alternating is a guess and a guess is wrong on a thread where someone
+        // sent two messages in a row.
+        var anyLabelled = st.some(humanish);
+        var sc2 = { els: st, user: function (el) {
+          return anyLabelled ? humanish(el) : st.indexOf(el) % 2 === 0;
+        } };
+        if (score(sc2) > bestScore) best = sc2;
+      }
+    }
+    if (!best || !best.els.length) return [];
+    var finder = best;
+    return best.els.map(function (el) {
       // innerText is what the page actually shows, which is the whole point —
       // but asking for it forces the browser to lay the page out, and on a
       // long thread that is the one genuinely expensive thing here. So it is
@@ -2502,6 +2622,45 @@
   window.__assay = {
     toggle: toggleSheet,
     version: VERSION,
+    // What each strategy sees on this page, and if none of them sees anything,
+    // enough of the page's shape to say why. A selector that has been renamed
+    // empties an export silently; this is how that stops being a guess.
+    _find: function () {
+      var out = { strategies: [], structural: 0, found: 0, sample: [] };
+      CHAT_FINDERS.forEach(function (f) {
+        var n = 0;
+        try { n = document.querySelectorAll(f.sel).length; } catch (e) { n = -1; }
+        out.strategies.push({ sel: f.sel, n: n });
+      });
+      try { out.structural = structuralTurns().length; } catch (e) {}
+      var live = liveTurns();
+      out.found = live.length;
+      out.roles = live.slice(0, 6).map(function (t) { return t.role; });
+      out.heads = live.slice(0, 3).map(function (t) { return t.head; });
+      if (!live.length) {
+        // Nothing found: describe what the page actually has, so the next
+        // version can be aimed rather than guessed.
+        var root = document.querySelector('main') || document.body;
+        var seen = {}, all = root ? root.querySelectorAll('*') : [];
+        for (var i = 0; i < all.length && i < 4000; i++) {
+          var el = all[i];
+          if (host.contains(el)) continue;
+          if ((el.textContent || '').trim().length < 80) continue;
+          var cls = ((el.className && el.className.indexOf ? el.className : '') + '').split(/\s+/)
+            .filter(function (c) { return c && !/^(flex|grid|text-|bg-|p[xytrbl]?-|m[xytrbl]?-|w-|h-|gap-|rounded|border|absolute|relative|overflow)/.test(c); })
+            .slice(0, 4).join('.');
+          var attrs = [];
+          for (var a = 0; a < el.attributes.length; a++) {
+            var nm = el.attributes[a].name;
+            if (/^data-/.test(nm)) attrs.push(nm + '=' + el.attributes[a].value.slice(0, 24));
+          }
+          var k = el.tagName.toLowerCase() + (cls ? '.' + cls : '') + (attrs.length ? '[' + attrs.join('][') + ']' : '');
+          if (!seen[k]) { seen[k] = true; out.sample.push(k); }
+          if (out.sample.length >= 25) break;
+        }
+      }
+      return out;
+    },
     _debug: function () {
       return {
         pending: pending ? { start: pending.start, end: pending.end, scope: pending.scope, text: pendingText() } : null,

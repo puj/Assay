@@ -227,3 +227,26 @@ Append only. Never edit an entry after the fact.
   typing 120 characters, and a reply streaming in now each ask Assay for zero
   frames of work. Zero is a number a mock can measure honestly; milliseconds
   on a synthetic scroller are not.
+- **2026-09-12** — Claude exported nothing, and the reason was a design fault,
+  not a stale selector. The strategies were tried in order and the first one to
+  match anything won. Claude renamed `font-claude-message` to
+  `font-claude-response`; the selector naming it alongside `user-message` still
+  matched — the human's half of the conversation — so the finder did not fail,
+  it succeeded at finding half a thread, and nothing said so. A strategy that
+  matches one side of a conversation is worse than one that matches nothing.
+  Candidates are now scored, and seeing both sides beats seeing more turns of
+  one side. Added to that: every spelling either site has used, matched on a
+  substring; and a finder that uses no names at all — the conversation is the
+  run of sibling elements whose own children hold the most text, which a nav or
+  a sidebar never is. It competes with the named strategies rather than waiting
+  for all of them to come back empty, and it costs its page walk only when what
+  we have is partial. Who spoke is read from a label anywhere inside the turn,
+  and only falls back to alternating when the page says nothing — alternating is
+  wrong the moment someone sends two messages in a row. `__assay._find()`
+  reports what each strategy saw and, when nothing is found, the page's actual
+  shape, so the next rename is diagnosed rather than guessed at. Six Claude
+  shapes are now tested, including two renames we have not had yet.
+  Worth noting for later: the best-maintained Claude exporter gave up on the
+  DOM entirely and reads the site's own conversation API, which would also fix
+  the window problem. It would mean a request to a server, which the privacy
+  note currently promises never happens, so it is a decision and not a patch.
