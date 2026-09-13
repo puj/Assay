@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.22.3
+// @version      0.22.4
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -250,7 +250,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.22.3';
+  var VERSION = '0.22.4';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2549,11 +2549,21 @@
         }
         cb(blob);
       }, function (err) {
-        cb(null, reached
-          ? (err && err.message) || ('Could not read ' + name + '.')
-          : ('This page would not let Assay fetch ' + name + '. That is the page\'s own security policy ' +
-             '(github.com is strict about it), or the file is missing its cross-origin header. ' +
-             'Try it on a chat page — chatgpt.com or claude.ai — and if it works there, that is what it was.'));
+        if (reached) return cb(null, (err && err.message) || ('Could not read ' + name + '.'));
+        // A fetch that never came back is two quite different problems, and
+        // guessing between them wasted a round trip. A no-cors request settles
+        // it: the browser will make it if the page's policy allows requests to
+        // this host at all, and refuse it if not. So if this one goes through,
+        // the page was fine with the request and the server would not let us
+        // read the answer; if it does not, the page stopped it.
+        var where = location.hostname;
+        fetch(url, { mode: 'no-cors' }).then(function () {
+          cb(null, name + ' is on the server, but it came back without the header that lets ' + where +
+            ' read it. The site needs to serve /voice/ with Access-Control-Allow-Origin: *.');
+        }, function () {
+          cb(null, where + ' does not allow Assay to fetch ' + name + ' at all — that is the page\'s own ' +
+            'connect-src policy, not the server. Running as ' + (IN_EXTENSION ? 'an extension' : 'a userscript') + '.');
+        });
       });
     };
     if (!useCache) return go(null);

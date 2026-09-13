@@ -419,3 +419,16 @@ Append only. Never edit an entry after the fact.
   the page rather than the server. The message says which now, and the copied
   diagnosis says whether Assay is running as an extension or a userscript, which
   is the fact I have been missing the whole time.
+- **2026-09-13** — it failed on chatgpt.com too, so not a GitHub quirk. The
+  message had been guessing between two quite different problems and naming the
+  wrong host while it did it. It does not guess now: when the fetch never comes
+  back, the same URL is tried again with mode 'no-cors'. The browser will make
+  that request if the page's policy allows requests to this host at all and
+  refuse it if not — so if the probe goes through, the page was content and the
+  server did not send the header that lets the page read the answer; if it does
+  not, the page stopped the request itself. Two different fixes, and now the
+  right one is named, along with the host it actually happened on and whether
+  Assay is running as an extension or a userscript.
+  A mock cannot settle this: route interception does not enforce CORS, so the
+  two fetch modes are driven directly. Worth remembering — a network mock that
+  answers every request cannot reproduce a browser refusing to read an answer.
