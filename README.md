@@ -204,7 +204,9 @@ On your device, always — Assay will not dictate into somebody else's datacentr
 - **Chrome and Edge** have on-device recognition built in. They may need a language pack; Assay asks first, and the browser fetches it.
 - **Everywhere else — including Firefox, which has no speech recognition at all** — the **extension** carries an offline recogniser. It is packaged but inert: 5.8 MB that is never loaded on a page until you press Dictate, so it costs nothing if you never dictate. The ~40 MB language model is still fetched once, on request, from `assay.projectnothing.ai/voice/` and kept in the browser's cache; after that dictation needs no network whatsoever. English today, chosen by the primary language subtag, so `en-GB` and `en-AU` reach the same model.
 
-  The engine is packaged rather than fetched because a chat page's own `connect-src` policy will not let a script running inside it fetch one — that is what defeated the download route on both chatgpt.com and github.com. A content script is not bound by the page's policy, which is why the extension can do this and the **userscript cannot**: there, voice is whatever the browser itself offers.
+  The engine is packaged rather than fetched because a chat page's own `connect-src` policy will not let a script running inside it fetch one — that is what defeated the download route on both chatgpt.com and github.com.
+
+  **Userscript users:** there are two. [`assay.user.js`](https://assay.projectnothing.ai/assay.user.js) is the one to install — `@grant none`, runs in the page, unchanged. [`assay-voice.user.js`](https://assay.projectnothing.ai/assay-voice.user.js) is the same code with the three grants dictation needs (`GM_xmlhttpRequest`, `GM_getResourceText`, `unsafeWindow`) and the engine as a `@resource`. Those run in the userscript manager's own context rather than the page's, so the page's policy has no say — which is the only way a userscript can dictate. It is a separate install because a grant moves the script into the manager's sandbox, and that is not a change worth making on everybody's behalf for a feature most never use.
 
 Both routes are code the extension shipped — Manifest V3 forbids running anything else, rightly, and `extension/VOSK-SOURCE.md` records exactly what that file is and how to verify it against the registry.
 
@@ -229,7 +231,7 @@ runtime dependency.
 | `extension/` | Generated content script + `manifest.json` (MV3, Chrome and Firefox). |
 | `assay-extension.zip` | Generated, reproducible extension package for the stores. |
 | `install.template.html` → `install.html` | Mobile install page; derives the bookmarklet from the embedded source. |
-| `site/` | The public site at assay.projectnothing.ai, deployed as its own Vercel project (root `site`). Its build command is `node fetch-voice.js`, which stages the offline recogniser into `site/voice/` at deploy time — so those 45 MB are never committed. The fetch is deliberately non-fatal: if it fails the site still deploys, and dictation says so on the browsers that needed it. `vercel.json` serves `/voice/` with `Access-Control-Allow-Origin: *`, which is required — the chat page is a different origin. |
+| `site/` | The public site at assay.projectnothing.ai, deployed as its own Vercel project (root `site`). Serves both userscripts and `voice/`. Its build command is `node fetch-voice.js`, which stages the offline recogniser into `site/voice/` at deploy time — so those 45 MB are never committed. The fetch is deliberately non-fatal: if it fails the site still deploys, and dictation says so on the browsers that needed it. `vercel.json` serves `/voice/` with `Access-Control-Allow-Origin: *`, which is required — the chat page is a different origin. |
 | `store/` | Store listing copy, submission checklist, and listing images. |
 | `marketing/` | Demo videos, video script, social posts. |
 | `scripts/` | Playwright renderers for the icons, screenshots and demo video. |

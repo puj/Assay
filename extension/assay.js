@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.23.0';
+  var VERSION = '0.23.1';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2296,8 +2296,57 @@
     } catch (e) {}
     return '';
   }
+  // The userscript manager's own fetch, when the script was granted it. It runs
+  // in the manager's context rather than the page's, so the page's connect-src
+  // has no say — which is the only reason dictation can work in a userscript at
+  // all. `@connect` in the header names the one host it may reach.
+  function gmFetch() {
+    try {
+      if (typeof GM_xmlhttpRequest === 'function') return GM_xmlhttpRequest;
+      if (typeof GM !== 'undefined' && GM && typeof GM.xmlHttpRequest === 'function') return GM.xmlHttpRequest;
+    } catch (e) {}
+    return null;
+  }
+  function gmResource(name) {
+    try {
+      if (typeof GM_getResourceText === 'function') return GM_getResourceText(name);
+    } catch (e) {}
+    return '';
+  }
+  function gmGetBlob(url, onProgress, cb) {
+    var xhr = gmFetch();
+    if (!xhr) return cb(null, 'no manager fetch');
+    try {
+      xhr({
+        method: 'GET', url: url, responseType: 'blob',
+        onprogress: function (e) {
+          if (e && e.lengthComputable && e.total) onProgress(e.loaded / e.total);
+        },
+        onload: function (res) {
+          if (res.status === 404) return cb(null, url.replace(/^.*\//, '') + ' is not on the server (404).');
+          if (res.status < 200 || res.status >= 300) return cb(null, 'The server answered ' + res.status + '.');
+          var b = res.response;
+          if (!b) return cb(null, 'The download came back empty.');
+          cb(b);
+        },
+        onerror: function () { cb(null, 'The download failed.'); },
+        ontimeout: function () { cb(null, 'The download timed out.'); }
+      });
+    } catch (e) { cb(null, (e && e.message) || 'The download could not be started.'); }
+  }
+
   function loadPackagedEngine(cb) {
     if (voskLib()) return cb(true);
+    // A userscript carries the engine as a @resource, which the manager
+    // downloaded and kept; reading it costs nothing until this line.
+    var src = gmResource('vosk');
+    if (src) {
+      try {
+        var run = new Function('module', 'exports', 'define', src);
+        run(undefined, undefined, undefined);
+      } catch (e) { return cb(false); }
+      return cb(!!voskLib());
+    }
     var url = packagedEngineUrl();
     if (!url) return cb(false);
     // A dynamic import of a packaged file: it is our own code, shipped in the
@@ -2309,7 +2358,8 @@
   }
   function wasmPossible() {
     if (!(window.AudioContext || window.webkitAudioContext)) return false;
-    return !!voskLib() || !!packagedEngineUrl() || !IN_EXTENSION;
+    if (voskLib() || packagedEngineUrl() || gmFetch()) return true;
+    return !IN_EXTENSION;
   }
   function wasmReady() { return !!wasmModel; }
 
@@ -2378,8 +2428,8 @@
 
   function wasmInstall(onProgress, cb) {
     if (wasmReady()) return cb(true);
-    // Packaged: nothing to fetch but the model.
-    if (voskLib() || packagedEngineUrl()) {
+    // Packaged — by the extension, or by the userscript manager as a resource.
+    if (voskLib() || packagedEngineUrl() || gmResource('vosk')) {
       onProgress(0, 'Starting the recogniser…');
       return loadPackagedEngine(function (ok) {
         if (!ok) return cb(false, 'The packaged recogniser would not start.');
@@ -2428,12 +2478,16 @@
                  names.join(' and ') + '.')
               : (firstWhy || 'The language model could not be fetched.'));
           }
-          cachedFetch(voiceBase() + names[i], function (f) {
-            onProgress(0.2 + f * 0.8, 'Fetching the language model…');
-          }, function (mblob, why) {
+          var url = voiceBase() + names[i];
+          var onto = function (f) { onProgress(0.2 + f * 0.8, 'Fetching the language model…'); };
+          var landed = function (mblob, why) {
             if (!mblob) return tryModel(i + 1, firstWhy || why);
             gotModel(mblob);
-          });
+          };
+          // The manager's fetch first where there is one: the page cannot
+          // refuse it, and on a chat page the page is what refuses.
+          if (gmFetch()) gmGetBlob(url, onto, landed);
+          else cachedFetch(url, onto, landed);
         };
         var gotModel = function (mblob) {
           var u = URL.createObjectURL(mblob);
@@ -3606,7 +3660,18 @@
   paintFlatBtn();
   updatePill();
   syncViewport();
-  window.__assay = {
+  // A grant puts the script in the manager's sandbox, where `window` is not the
+  // page's. Everything here works either way, but the page-side handle is worth
+  // keeping: it is what a second run toggles, and what a console reaches.
+  function publish(api) {
+    window.__assay = api;
+    try {
+      if (typeof unsafeWindow !== 'undefined' && unsafeWindow && unsafeWindow !== window) {
+        unsafeWindow.__assay = api;
+      }
+    } catch (e) {}   // Firefox may refuse to hand a sandbox object to the page
+  }
+  publish({
     toggle: toggleSheet,
     version: VERSION,
     // What each strategy sees on this page, and if none of them sees anything,
@@ -3693,5 +3758,5 @@
         exportTxt: buildConversationText(getConversation())
       };
     }
-  };
+  });
 })();

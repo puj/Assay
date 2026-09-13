@@ -1,20 +1,24 @@
 // ==UserScript==
-// @name         Assay — deep dive for AI chats
+// @name         Assay + voice — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
 // @version      0.23.1
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
 // @supportURL   https://github.com/puj/Assay/issues
-// @updateURL    https://assay.projectnothing.ai/assay.user.js
-// @downloadURL  https://assay.projectnothing.ai/assay.user.js
+// @updateURL    https://assay.projectnothing.ai/assay-voice.user.js
+// @downloadURL  https://assay.projectnothing.ai/assay-voice.user.js
 // @icon         https://assay.projectnothing.ai/icon.png
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @match        https://claude.ai/*
 // @match        https://github.com/*
 // @match        https://gist.github.com/*
-// @grant        none
+// @resource     vosk https://assay.projectnothing.ai/voice/vosk.js
+// @connect      assay.projectnothing.ai
+// @grant        GM_xmlhttpRequest
+// @grant        GM_getResourceText
+// @grant        unsafeWindow
 // @run-at       document-idle
 // ==/UserScript==
 

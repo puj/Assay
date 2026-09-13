@@ -453,3 +453,15 @@ Append only. Never edit an entry after the fact.
   widen the store review for nothing. The zip is 2.4MB compressed; VOSK-SOURCE.md
   records what the file is, its hash, and the two commands that reproduce it
   from the registry, because a reviewer is going to ask.
+- **2026-09-13** — "so no way through Tampermonkey?" — there is, and saying
+  otherwise was wrong. GM_xmlhttpRequest runs in the manager's own context
+  rather than the page's, so a chat page's connect-src has no say over it, and
+  @resource lets the manager hold the engine instead of the page fetching it.
+  What made me say no was the grant: asking for one moves the script into the
+  manager's sandbox, where `window` is not the page's, and that is a change with
+  a blast radius across every feature for people who will never dictate. So
+  there are two scripts from the one core now — assay.user.js exactly as it was,
+  @grant none, and assay-voice.user.js with the three grants and the engine as a
+  resource. Nobody's install changes unless they choose it.
+  Neither is read until Dictate is pressed, which the tests check: opening the
+  scratchpad touches neither the resource nor the fetch.
