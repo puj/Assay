@@ -465,3 +465,17 @@ Append only. Never edit an entry after the fact.
   resource. Nobody's install changes unless they choose it.
   Neither is read until Dictate is pressed, which the tests check: opening the
   scratchpad touches neither the resource nor the fetch.
+- **2026-09-13** — "the packaged recogniser would not start" was the same mistake
+  a third time: one message over two unrelated failures. The manager might not
+  have downloaded the resource at all, or the page might have refused to let the
+  script compile it — Firefox can hold a userscript sandbox to the page's
+  script-src, so `new Function` throws there however privileged the manager is.
+  Three routes are tried now and each keeps what it said: compile the resource,
+  import it by the URL the manager hands back, or import a packaged file. The
+  second is what gets past a refusal to compile, because a URL is not source.
+  Two things the tests found on the way. The engine's download fallback still
+  went through the page's own fetch, which is the thing that cannot work on a
+  chat page; every download goes through the manager now when there is one. And
+  a voice userscript whose resource never arrived could not reach the code that
+  says "reinstall it" — the guard had already sent it down the fetch path, where
+  it tried to compile an HTML error page and reported a syntax error.

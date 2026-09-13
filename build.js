@@ -50,6 +50,7 @@ const meta = (voice) => [
   '// @connect      assay.projectnothing.ai',
   '// @grant        GM_xmlhttpRequest',
   '// @grant        GM_getResourceText',
+  '// @grant        GM_getResourceURL',
   '// @grant        unsafeWindow'
 ] : [
   '// @grant        none'

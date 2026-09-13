@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.23.1
+// @version      0.23.2
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.23.1';
+  var VERSION = '0.23.2';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2355,26 +2355,56 @@
     } catch (e) { cb(null, (e && e.message) || 'The download could not be started.'); }
   }
 
+  // Starting the engine, by whichever route this browser will allow.
+  //
+  // There are three, because no single one works everywhere. Compiling the
+  // resource is the direct route and the one Firefox is most likely to refuse:
+  // a userscript sandbox there can still be held to the page's script-src, so
+  // `new Function` throws on a strict site however privileged the manager is.
+  // Importing the resource by URL goes around that, since the manager hands
+  // back an extension-origin or blob URL rather than source. And a packaged
+  // file is what an extension has instead of either.
+  //
+  // Each is tried, and what each one said is kept — "would not start" told
+  // nobody anything, which is how this reached a phone in the first place.
   function loadPackagedEngine(cb) {
     if (voskLib()) return cb(true);
-    // A userscript carries the engine as a @resource, which the manager
-    // downloaded and kept; reading it costs nothing until this line.
-    var src = gmResource('vosk');
+    var tried = [];
+    var give = function (ok) { cb(ok, tried.join('; ')); };
+
+    var src = '';
+    try { src = gmResource('vosk'); } catch (e) { tried.push('reading the resource threw (' + (e && e.message) + ')'); }
     if (src) {
       try {
-        var run = new Function('module', 'exports', 'define', src);
-        run(undefined, undefined, undefined);
-      } catch (e) { return cb(false); }
-      return cb(!!voskLib());
+        (new Function('module', 'exports', 'define', src))(undefined, undefined, undefined);
+        if (voskLib()) return give(true);
+        tried.push('the resource ran but defined nothing');
+      } catch (e) {
+        tried.push('this page will not let the script compile it (' + ((e && e.message) || 'refused') + ')');
+      }
+    } else if (!tried.length) {
+      tried.push('the manager has no vosk resource — the script may need reinstalling so it fetches one');
     }
-    var url = packagedEngineUrl();
-    if (!url) return cb(false);
-    // A dynamic import of a packaged file: it is our own code, shipped in the
-    // package, which is the only kind an extension may run.
+
+    var url = '';
     try {
-      import(/* webpackIgnore: true */ url).then(function () { cb(!!voskLib()); },
-        function () { cb(false); });
-    } catch (e) { cb(false); }
+      if (typeof GM_getResourceURL === 'function') url = GM_getResourceURL('vosk');
+    } catch (e) {}
+    if (!url) url = packagedEngineUrl();
+    if (!url) return give(false);
+    try {
+      import(/* webpackIgnore: true */ url).then(function () {
+        if (voskLib()) return give(true);
+        tried.push('importing it defined nothing');
+        give(false);
+      }, function (e) {
+        tried.push('importing it failed (' + ((e && e.message) || 'refused') + ')');
+        give(false);
+      });
+    } catch (e) {
+      tried.push('importing it threw (' + ((e && e.message) || 'refused') + ')');
+      give(false);
+    }
   }
   function wasmPossible() {
     if (!(window.AudioContext || window.webkitAudioContext)) return false;
@@ -2395,6 +2425,17 @@
     var name = url.replace(/^.*\//, '');
     var go = function (fromCache) {
       if (fromCache) return cb(fromCache);
+      if (gmFetch()) {
+        // The manager's own request, which the page has no say over. Same
+        // caching afterwards, so this happens once either way.
+        return gmGetBlob(url, onProgress, function (blob, why) {
+          if (!blob) return cb(null, why);
+          if (useCache) {
+            try { caches.open(WASM_CACHE).then(function (c) { c.put(url, new Response(blob.slice())); }); } catch (e) {}
+          }
+          cb(blob);
+        });
+      }
       var reached = false;
       fetch(url).then(function (res) {
         reached = true;
@@ -2449,10 +2490,12 @@
   function wasmInstall(onProgress, cb) {
     if (wasmReady()) return cb(true);
     // Packaged — by the extension, or by the userscript manager as a resource.
-    if (voskLib() || packagedEngineUrl() || gmResource('vosk')) {
+    var isVoiceScript = false;
+    try { isVoiceScript = (typeof GM_getResourceText === 'function'); } catch (e) {}
+    if (voskLib() || packagedEngineUrl() || isVoiceScript) {
       onProgress(0, 'Starting the recogniser…');
-      return loadPackagedEngine(function (ok) {
-        if (!ok) return cb(false, 'The packaged recogniser would not start.');
+      return loadPackagedEngine(function (ok, why) {
+        if (!ok) return cb(false, 'The recogniser would not start: ' + (why || 'no reason given') + '.');
         withEngine(onProgress, cb);
       });
     }
