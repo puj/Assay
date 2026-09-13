@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.22.2
+// @version      0.22.3
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.22.2';
+  var VERSION = '0.22.3';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2346,28 +2346,53 @@
       if (!blob) return cb(false, why || 'The recogniser could not be fetched.');
       blob.text().then(function (src) {
         try {
-          if (!window.Vosk) (0, eval)(src);      // page context only; never in an extension
-        } catch (e) { return cb(false, 'The recogniser could not be started.'); }
+          if (!window.Vosk) {
+            // The recogniser ships as a UMD bundle, which picks CommonJS if the
+            // page happens to have `module`/`exports` defined — plenty of pages
+            // do — and then sets nothing on window. Shadowing all three names
+            // makes it take the browser-global branch every time.
+            var run = new Function('module', 'exports', 'define', src);
+            run(undefined, undefined, undefined);   // page context only; never in an extension
+          }
+        } catch (e) { return cb(false, 'The recogniser could not be started: ' + (e && e.message)); }
         if (!window.Vosk || !window.Vosk.createModel) return cb(false, 'The recogniser did not load.');
         onProgress(0.2, 'Fetching the language model…');
         // The primary subtag, not the whole locale: there is one English model,
         // and asking for model-en-gb.zip because that is how the browser spells
         // the language would be a 404 for most of the people who speak it.
         var base = voiceLang().split('-')[0].toLowerCase();
-        var modelUrl = voiceBase() + 'model-' + base + '.zip';
-        cachedFetch(modelUrl, function (f) { onProgress(0.2 + f * 0.8, 'Fetching the language model…'); }, function (mblob, why) {
-          if (!mblob) {
-            return cb(false, /404/.test(why || '')
-              ? ('There is no offline model for ' + base + ' yet. English is the one that is there today.')
-              : (why || 'The language model could not be fetched.'));
+        // model-en.zip is the name to deploy under, since one English model
+        // serves en-GB and en-AU as well. But a model already sitting on the
+        // server under the browser's full locale is a perfectly good model, and
+        // making somebody re-upload 40MB over a filename would be absurd.
+        var names = ['model-' + base + '.zip'];
+        var full = voiceLang().toLowerCase();
+        if (full !== base) names.push('model-' + full + '.zip');
+        var tryModel = function (i, firstWhy) {
+          if (i >= names.length) {
+            return cb(false, /404/.test(firstWhy || '')
+              ? ('There is no offline model for ' + base + ' on the server yet — it looked for ' +
+                 names.join(' and ') + '.')
+              : (firstWhy || 'The language model could not be fetched.'));
           }
+          cachedFetch(voiceBase() + names[i], function (f) {
+            onProgress(0.2 + f * 0.8, 'Fetching the language model…');
+          }, function (mblob, why) {
+            if (!mblob) return tryModel(i + 1, firstWhy || why);
+            gotModel(mblob);
+          });
+        };
+        var gotModel = function (mblob) {
           var u = URL.createObjectURL(mblob);
           window.Vosk.createModel(u).then(function (m) {
             wasmModel = m;
             try { URL.revokeObjectURL(u); } catch (e) {}
             cb(true);
-          }, function () { cb(false, 'The language model could not be opened.'); });
-        });
+          }, function (e) {
+            cb(false, 'The language model could not be opened: ' + ((e && e.message) || 'unreadable') + '.');
+          });
+        };
+        tryModel(0, '');
       }, function () { cb(false, 'The recogniser could not be read.'); });
     });
   }

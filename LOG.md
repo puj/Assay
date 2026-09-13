@@ -401,3 +401,21 @@ Append only. Never edit an entry after the fact.
   The diagnosis says whether Assay is running as an extension or a userscript
   too. That one line decides which voice path is even supposed to run, and I had
   been reasoning about a report without it.
+- **2026-09-13** — the artifacts went up and dictation still failed, on
+  github.com. Three things, and only the last is the interesting one.
+  The model was deployed as model-en-us.zip and the code had just been changed
+  to ask for model-en.zip — my rename, landing between the staging and the
+  upload. It looks for both now, because making somebody re-upload 40MB over a
+  filename would be absurd.
+  The recogniser ships as a UMD bundle, which picks CommonJS whenever the page
+  has `module`/`exports` defined — and plenty of pages do — and then sets
+  nothing on window. All three names are shadowed when it is run, so it takes
+  the browser-global branch every time.
+  And the site is a plain static deploy again. The build command made sense
+  while the artifacts were fetched at deploy time; they are committed now, and a
+  build step on a site that does not need one is only a way for
+  assay.projectnothing.ai to go down for no gain.
+  What none of this settles is whether the fetch on github.com was refused by
+  the page rather than the server. The message says which now, and the copied
+  diagnosis says whether Assay is running as an extension or a userscript, which
+  is the fact I have been missing the whole time.

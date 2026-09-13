@@ -1,6 +1,4 @@
 {
-  "buildCommand": "node fetch-voice.js",
-  "outputDirectory": ".",
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [

@@ -5,17 +5,19 @@
 // two files the first time somebody asks to dictate in a browser that cannot do
 // it on its own, and keeps them in the browser's cache from then on.
 //
-//   npm run fetch-voice          (locally)
+//   npm run fetch-voice
 //
-// It is also the site's build command, so Vercel stages these at deploy time
-// and nothing large is ever committed. vercel.json serves /voice/ with
-// `Access-Control-Allow-Origin: *`, which is not optional: the chat page is a
-// different origin, and without that header the browser refuses the fetch
-// before it starts.
+// The artifacts are committed to site/voice/ and deployed with the site as
+// static files, so this is a staging helper you run when adding a model, not
+// part of the deploy. It skips anything already present.
 //
-// This must never fail the deploy. If a file cannot be fetched the site goes
-// out without it and dictation says so on the browsers that needed it — which
-// is a far better outcome than assay.projectnothing.ai being down.
+// vercel.json serves /voice/ with `Access-Control-Allow-Origin: *`, which is
+// not optional: the chat page is a different origin, and without that header
+// the browser refuses the fetch before it starts.
+//
+// Name a model by its primary subtag — model-en.zip, not model-en-us.zip — so
+// one English model serves en-GB and en-AU too. Assay looks for the full
+// locale as a fallback, so an older upload still works.
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
