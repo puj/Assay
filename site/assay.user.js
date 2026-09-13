@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.22.1
+// @version      0.22.2
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.22.1';
+  var VERSION = '0.22.2';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2288,12 +2288,21 @@
 
   // Fetched once, then kept in the browser's cache, so the second time you
   // dictate nothing is downloaded and nothing needs a network.
+  // `cb(blob)` on success, `cb(null, why)` on failure — and `why` is the point.
+  // "The recogniser could not be fetched" is at least three different problems
+  // wearing the same coat: the file is not on the server, the server will not
+  // let this page read it, or the page refused to make the request at all. They
+  // have different fixes and only one of them is mine, so they are told apart.
   function cachedFetch(url, onProgress, cb) {
     var useCache = typeof caches !== 'undefined';
+    var name = url.replace(/^.*\//, '');
     var go = function (fromCache) {
       if (fromCache) return cb(fromCache);
+      var reached = false;
       fetch(url).then(function (res) {
-        if (!res.ok) throw new Error(res.status);
+        reached = true;
+        if (res.status === 404) throw new Error(name + ' is not on the server (404). It has not been deployed yet.');
+        if (!res.ok) throw new Error(name + ' came back ' + res.status + ' from the server.');
         var total = +(res.headers.get('content-length') || 0);
         if (!res.body || !res.body.getReader || !total) return res.blob();
         var reader = res.body.getReader(), got = 0, chunks = [];
@@ -2313,7 +2322,13 @@
           } catch (e) {}
         }
         cb(blob);
-      }, function () { cb(null); });
+      }, function (err) {
+        cb(null, reached
+          ? (err && err.message) || ('Could not read ' + name + '.')
+          : ('This page would not let Assay fetch ' + name + '. That is the page\'s own security policy ' +
+             '(github.com is strict about it), or the file is missing its cross-origin header. ' +
+             'Try it on a chat page — chatgpt.com or claude.ai — and if it works there, that is what it was.'));
+      });
     };
     if (!useCache) return go(null);
     caches.open(WASM_CACHE).then(function (c) {
@@ -2327,8 +2342,8 @@
   function wasmInstall(onProgress, cb) {
     if (wasmReady()) return cb(true);
     onProgress(0, 'Fetching the recogniser…');
-    cachedFetch(voiceBase() + 'vosk.js', function (f) { onProgress(f * 0.2, 'Fetching the recogniser…'); }, function (blob) {
-      if (!blob) return cb(false, 'The recogniser could not be fetched.');
+    cachedFetch(voiceBase() + 'vosk.js', function (f) { onProgress(f * 0.2, 'Fetching the recogniser…'); }, function (blob, why) {
+      if (!blob) return cb(false, why || 'The recogniser could not be fetched.');
       blob.text().then(function (src) {
         try {
           if (!window.Vosk) (0, eval)(src);      // page context only; never in an extension
@@ -2340,10 +2355,11 @@
         // the language would be a 404 for most of the people who speak it.
         var base = voiceLang().split('-')[0].toLowerCase();
         var modelUrl = voiceBase() + 'model-' + base + '.zip';
-        cachedFetch(modelUrl, function (f) { onProgress(0.2 + f * 0.8, 'Fetching the language model…'); }, function (mblob) {
+        cachedFetch(modelUrl, function (f) { onProgress(0.2 + f * 0.8, 'Fetching the language model…'); }, function (mblob, why) {
           if (!mblob) {
-            return cb(false, 'There is no offline model for ' + base + ' yet. ' +
-              'English is the one that is there today.');
+            return cb(false, /404/.test(why || '')
+              ? ('There is no offline model for ' + base + ' yet. English is the one that is there today.')
+              : (why || 'The language model could not be fetched.'));
           }
           var u = URL.createObjectURL(mblob);
           window.Vosk.createModel(u).then(function (m) {
@@ -2929,6 +2945,11 @@
     var lines = ['Assay ' + VERSION + ' on ' + location.hostname];
     try {
       var f = window.__assay._find();
+      lines.push('running as: ' + f.runtime);
+      lines.push('voice: recogniser=' + f.voice.ctor + ' onDeviceApi=' + f.voice.onDeviceApi +
+        ' lang=' + f.voice.lang + ' canFetchEngine=' + f.voice.canFetchEngine +
+        ' engineLoaded=' + f.voice.engineLoaded);
+      lines.push('voice base: ' + f.voice.base);
       f.strategies.forEach(function (st, i) { lines.push('finder ' + (i + 1) + ': ' + st.n + '  ' + st.sel.slice(0, 60)); });
       lines.push('by shape: ' + f.structural + ' | used: ' + f.found + ' | roles: ' + (f.roles || []).join(','));
       if (f.sample && f.sample.length) lines.push('page shape: ' + f.sample.join('  '));
@@ -3516,7 +3537,18 @@
     // enough of the page's shape to say why. A selector that has been renamed
     // empties an export silently; this is how that stops being a guess.
     _find: function () {
-      var out = { strategies: [], structural: 0, found: 0, sample: [] };
+      var out = {
+        strategies: [], structural: 0, found: 0, sample: [],
+        runtime: IN_EXTENSION ? 'extension' : 'userscript/page',
+        voice: {
+          ctor: !!voiceCtor(),
+          onDeviceApi: !!(voiceCtor() && voiceCtor().available),
+          lang: voiceLang(),
+          canFetchEngine: wasmPossible(),
+          engineLoaded: wasmReady(),
+          base: voiceBase()
+        }
+      };
       CHAT_FINDERS.forEach(function (f) {
         var n = 0;
         try { n = document.querySelectorAll(f.sel).length; } catch (e) { n = -1; }

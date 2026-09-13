@@ -390,3 +390,14 @@ Append only. Never edit an entry after the fact.
   it. And the model was requested by the whole locale, so a browser saying
   en-GB asked for model-en-gb.zip; it is the primary subtag now, and one
   English model serves every variant of it.
+- **2026-09-13** — "The recogniser could not be fetched" turned out to be three
+  different problems wearing one coat: the file is not on the server, the server
+  will not let this page read it, or the page refused to make the request at
+  all. They have different fixes and only one of them is mine, so the message
+  now says which — a 404 names the file and says it has not been deployed; a
+  request that never left names the page's own policy, points at github.com
+  being strict about it, and says to try the same thing on a chat page, because
+  if it works there that was the answer.
+  The diagnosis says whether Assay is running as an extension or a userscript
+  too. That one line decides which voice path is even supposed to run, and I had
+  been reasoning about a report without it.
