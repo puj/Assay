@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.21.0
+// @version      0.22.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -250,7 +250,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.21.0';
+  var VERSION = '0.22.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2484,15 +2484,145 @@
     return 'Dictation stopped.';
   }
 
-  var rec = null, recOn = false;
+  // ---- the second engine: a recogniser fetched and kept, for browsers with
+  // none of their own.
+  //
+  // Firefox has no speech recognition at all, and Firefox on Android is where
+  // this is used, so "the browser cannot" had to stop being the end of it. An
+  // offline recogniser is about 6MB of engine and 40MB of language model; that
+  // is what offline speech costs, and it is why it is fetched the first time
+  // you ask for it rather than shipped to everybody who installs Assay.
+  //
+  // It is offered only where fetched code may actually run. An extension may
+  // not (MV3 forbids running code it did not ship, and rightly), so there the
+  // browser's own recogniser is the only path — which on Chrome and Edge is
+  // already an on-device one.
+  var IN_EXTENSION = (function () {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) return true;
+      if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.id) return true;
+    } catch (e) {}
+    return false;
+  })();
+  var VOICE_BASE = 'https://assay.projectnothing.ai/voice/';
+  function voiceBase() { return loadJSON(VOICE_KEY, {}).base || VOICE_BASE; }
+  var WASM_CACHE = 'assay-voice-v1';
+  var wasmModel = null, wasmCtx = null, wasmNode = null, wasmStream = null;
+
+  function wasmPossible() { return !IN_EXTENSION && !!(window.AudioContext || window.webkitAudioContext); }
+  function wasmReady() { return !!wasmModel; }
+
+  // Fetched once, then kept in the browser's cache, so the second time you
+  // dictate nothing is downloaded and nothing needs a network.
+  function cachedFetch(url, onProgress, cb) {
+    var useCache = typeof caches !== 'undefined';
+    var go = function (fromCache) {
+      if (fromCache) return cb(fromCache);
+      fetch(url).then(function (res) {
+        if (!res.ok) throw new Error(res.status);
+        var total = +(res.headers.get('content-length') || 0);
+        if (!res.body || !res.body.getReader || !total) return res.blob();
+        var reader = res.body.getReader(), got = 0, chunks = [];
+        return (function pump() {
+          return reader.read().then(function (r) {
+            if (r.done) return new Blob(chunks);
+            chunks.push(r.value);
+            got += r.value.length;
+            onProgress(got / total);
+            return pump();
+          });
+        })();
+      }).then(function (blob) {
+        if (useCache) {
+          try {
+            caches.open(WASM_CACHE).then(function (c) { c.put(url, new Response(blob.slice())); });
+          } catch (e) {}
+        }
+        cb(blob);
+      }, function () { cb(null); });
+    };
+    if (!useCache) return go(null);
+    caches.open(WASM_CACHE).then(function (c) {
+      c.match(url).then(function (res) {
+        if (!res) return go(null);
+        res.blob().then(function (b) { go(b); }, function () { go(null); });
+      }, function () { go(null); });
+    }, function () { go(null); });
+  }
+
+  function wasmInstall(onProgress, cb) {
+    if (wasmReady()) return cb(true);
+    onProgress(0, 'Fetching the recogniser…');
+    cachedFetch(voiceBase() + 'vosk.js', function (f) { onProgress(f * 0.2, 'Fetching the recogniser…'); }, function (blob) {
+      if (!blob) return cb(false, 'The recogniser could not be fetched.');
+      blob.text().then(function (src) {
+        try {
+          if (!window.Vosk) (0, eval)(src);      // page context only; never in an extension
+        } catch (e) { return cb(false, 'The recogniser could not be started.'); }
+        if (!window.Vosk || !window.Vosk.createModel) return cb(false, 'The recogniser did not load.');
+        onProgress(0.2, 'Fetching the language model…');
+        var modelUrl = voiceBase() + 'model-' + voiceLang().toLowerCase() + '.zip';
+        cachedFetch(modelUrl, function (f) { onProgress(0.2 + f * 0.8, 'Fetching the language model…'); }, function (mblob) {
+          if (!mblob) return cb(false, 'The language model could not be fetched.');
+          var u = URL.createObjectURL(mblob);
+          window.Vosk.createModel(u).then(function (m) {
+            wasmModel = m;
+            try { URL.revokeObjectURL(u); } catch (e) {}
+            cb(true);
+          }, function () { cb(false, 'The language model could not be opened.'); });
+        });
+      }, function () { cb(false, 'The recogniser could not be read.'); });
+    });
+  }
+
+  function wasmStart(h) {
+    if (!wasmReady()) { h.error('The recogniser is not ready.'); return; }
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
+    }).then(function (stream) {
+      wasmStream = stream;
+      wasmCtx = new Ctx();
+      var r = new wasmModel.KaldiRecognizer(wasmCtx.sampleRate);
+      r.on('partialresult', function (m) { h.interim((m && m.result && m.result.partial) || ''); });
+      r.on('result', function (m) {
+        var t = (m && m.result && m.result.text) || '';
+        if (t) { h.final(t); h.interim(''); }
+      });
+      wasmNode = wasmCtx.createScriptProcessor(4096, 1, 1);
+      wasmNode.onaudioprocess = function (ev) {
+        try { r.acceptWaveform(ev.inputBuffer); } catch (e) {}
+      };
+      var src = wasmCtx.createMediaStreamSource(stream);
+      src.connect(wasmNode);
+      wasmNode.connect(wasmCtx.destination);
+      recOn = true;
+    }, function () { h.error(voiceErrorText('not-allowed')); });
+  }
+  function wasmStop() {
+    try { if (wasmNode) { wasmNode.onaudioprocess = null; wasmNode.disconnect(); } } catch (e) {}
+    try { if (wasmCtx) wasmCtx.close(); } catch (e) {}
+    try {
+      if (wasmStream) wasmStream.getTracks().forEach(function (t) { t.stop(); });
+    } catch (e) {}
+    wasmNode = null; wasmCtx = null; wasmStream = null;
+  }
+
+  var rec = null, recOn = false, usingWasm = false;
   function listening() { return recOn; }
   function stopListening() {
     recOn = false;
+    if (usingWasm) { usingWasm = false; wasmStop(); return; }
     if (!rec) return;
     try { rec.onend = null; rec.onresult = null; rec.onerror = null; rec.stop(); } catch (e) {}
     rec = null;
   }
   function startListening(h) {
+    if (wasmReady()) {
+      stopListening();
+      usingWasm = true;
+      return wasmStart(h);
+    }
     var C = voiceCtor();
     if (!C) { h.error('This browser cannot do speech recognition.'); return; }
     stopListening();
@@ -2524,13 +2654,24 @@
 
   // Everything above is only reached through here, so there is exactly one
   // place that decides whether dictating is allowed to begin.
+  // `offer` is what pressing Download would actually do: 'pack' for the
+  // browser's own language pack, 'engine' for the recogniser we fetch
+  // ourselves, or false when there is nothing to offer and saying so is the
+  // whole of the answer.
   function withVoice(onReady, onRefuse) {
+    if (wasmReady()) return onReady();
     voiceStatus(function (st) {
       if (st === 'available') return onReady();
       if (st === 'downloading') return onRefuse('The language pack is still downloading. Try again in a moment.', false);
-      if (st === 'downloadable') return onRefuse('', true);
+      if (st === 'downloadable') return onRefuse('', 'pack');
+      if (wasmPossible()) {
+        return onRefuse(st === 'nolocal'
+          ? 'This browser can only recognise speech by sending it to a server, so Assay will not use it. It can fetch a recogniser that runs here instead.'
+          : 'This browser has no speech recognition of its own. Assay can fetch one that runs on this device.', 'engine');
+      }
       if (st === 'nosupport') {
-        return onRefuse('This browser has no speech recognition. Firefox does not have it yet, on Android or anywhere else.', false);
+        return onRefuse('This browser has no speech recognition, and an extension may not fetch one. ' +
+          'The userscript can, or use Chrome or Edge.', false);
       }
       if (st === 'nolocal') {
         return onRefuse('This browser can only recognise speech by sending it to a server, so Assay will not use it.', false);
@@ -3160,25 +3301,48 @@
     withVoice(function () { beginDictation(target); }, function (msg, offer) {
       if (offer) {
         pendingTarget = target;
+        pendingOffer = offer;
         if (!pad.classList.contains('show')) openPad();
-        padAsk('', true);
+        padAsk(offer === 'engine'
+          ? (msg + ' It is about 45MB, fetched once and kept, and then it needs no network at all.')
+          : '', true);
         return;
       }
       if (pad.classList.contains('show')) padAsk(msg, false);
       else toast(msg, 4000);
     });
   }
-  var pendingTarget = null;
-  $('padAskNo').addEventListener('click', function () { padAskHide(); pendingTarget = null; });
+  var pendingTarget = null, pendingOffer = null;
+  $('padAskNo').addEventListener('click', function () {
+    padAskHide();
+    pendingTarget = null;
+    pendingOffer = null;
+  });
   $('padAskYes').addEventListener('click', function () {
-    $('padAskMsg').textContent = 'Fetching the language pack…';
-    voiceInstall(function (ok) {
+    var offer = pendingOffer;
+    $('padAskYes').style.display = 'none';
+    $('padAskNo').textContent = 'Cancel';
+    var done = function (ok, why) {
+      if (!ok) {
+        padAsk(why || 'That could not be fetched.', false);
+        pendingOffer = null;
+        return;
+      }
       padAskHide();
-      if (!ok) { toast('The language pack could not be fetched', 3200); return; }
       var t = pendingTarget || 'pad';
       pendingTarget = null;
+      pendingOffer = null;
       dictate(t);
-    });
+    };
+    if (offer === 'engine') {
+      $('padAskMsg').textContent = 'Fetching the recogniser…';
+      wasmInstall(function (frac, label) {
+        $('padAskMsg').textContent = label + '  ' + Math.round((frac || 0) * 100) + '%';
+      }, done);
+      return;
+    }
+    $('padAskMsg').textContent = 'Fetching the language pack…';
+    voiceInstall(function (ok) { done(ok, 'The language pack could not be fetched.'); });
   });
 
   function paintDictating(on) {

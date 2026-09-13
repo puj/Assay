@@ -355,3 +355,20 @@ Append only. Never edit an entry after the fact.
   with nothing to download still offered a Download button, and the scratchpad's
   taps landed nowhere because the page's caret lookup does not reach into a
   shadow root — it measures characters now.
+- **2026-09-13** — the Firefox hole is closed, by a second engine rather than a
+  compromise. Where a browser has no local recognition of its own, Assay offers
+  to fetch one: about 6MB of recogniser and 40MB of language model, asked about
+  by size before anything is fetched, kept in the browser's cache, and after
+  that dictation needs no network at all. Nothing about this is packaged —
+  build.js puts manifest.json, assay.js and icons in the zip and nothing else,
+  so the size is paid only by people who ask for it.
+  It is offered only where fetched code may actually run. An extension may not,
+  and should not: MV3 forbids running code it did not ship. So the extensions
+  get the browser's own on-device recogniser or an explanation, and the
+  userscript — which is what runs on Firefox Android, the platform that started
+  this — gets both.
+  Two things only the test could have found, both real rather than test detail.
+  The engine is fetched cross-origin, so the site must send
+  Access-Control-Allow-Origin or the browser refuses before it starts; and the
+  artifacts are staged by `npm run fetch-voice` into a gitignored site/voice/,
+  because 46MB does not belong in a repository any more than in a package.

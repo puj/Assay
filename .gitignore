@@ -1,2 +1,4 @@
 node_modules/
 marketing/raw/
+# fetched by `npm run fetch-voice`, served by the site, never packaged
+site/voice/

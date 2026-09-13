@@ -198,8 +198,13 @@ Yes, where the browser can do it **on the device**. The note box has a mic, and 
 
 The first time, the browser may need a language pack; Assay asks before anything is fetched, and the browser fetches it, not us. After that it works with no network at all.
 
-**Why won't voice work in my browser?**
-Because Assay will not dictate into somebody else's datacentre. Browsers do speech recognition by sending your microphone to a server unless told otherwise, so Assay only uses recognition it can pin to your device — and says so plainly when it can't. Today that means Chrome and Edge. **Firefox has no speech recognition at all**, on Android or anywhere else, so the mic will tell you that rather than pretending.
+**Where does the recognition happen?**
+On your device, always — Assay will not dictate into somebody else's datacentre. Browsers do speech recognition by sending your microphone to a server unless told otherwise, so Assay uses only recognition it can pin to the device, by one of two routes:
+
+- **Chrome and Edge** have on-device recognition built in. They may need a language pack; Assay asks first, and the browser fetches it.
+- **Everywhere else — including Firefox, which has no speech recognition at all** — Assay offers to fetch an offline recogniser the first time you ask. It's about 45 MB, kept in the browser's cache, and after that dictation needs no network whatsoever.
+
+The second route runs code that was fetched rather than shipped, which the **extension** builds are not allowed to do (Manifest V3 forbids it, rightly). So in the Chrome/Edge/Firefox *extension* you get the first route or an explanation; in the **userscript** you get both. On Firefox for Android the userscript is the one that can dictate.
 
 **Does it auto-send anything?**
 Never. ↗ To composer only fills the message box.

@@ -8,7 +8,8 @@
     "build": "node build.js",
     "assets": "node scripts/render_assets.js",
     "video": "node scripts/video.js",
-    "cws-token": "node scripts/cws-refresh-token.js"
+    "cws-token": "node scripts/cws-refresh-token.js",
+    "fetch-voice": "node scripts/fetch-voice.js"
   },
   "devDependencies": {
     "playwright-core": "^1.50.0"
