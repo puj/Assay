@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.20.1';
+  var VERSION = '0.20.2';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2050,22 +2050,45 @@
       var seen = textCache.get(el);
       if (!seen || seen.tl !== tl || seen.kids !== kids) {
         var norm = normText(el.innerText || '');
-        seen = { tl: tl, kids: kids, head: norm.slice(0, 60), len: norm.length };
+        // `head` comes from innerText because it is what the message looks
+        // like, and it is only ever shown to you. It must never be used to
+        // recognise a message: innerText is what the page *renders*, so for a
+        // message the browser has not laid out — which, in a list that builds
+        // only what is on screen, is most of them — it comes back different or
+        // empty. `sig` is taken from textContent, which is in the document
+        // whether or not anything has been drawn, and so reads the same every
+        // time the same message is met.
+        var raw = normText(el.textContent || '');
+        seen = {
+          tl: tl, kids: kids, head: norm.slice(0, 60), len: norm.length,
+          // The opening only, and not the length: a message that gets unfolded
+          // on the way past has to stay the same message, and unfolding it
+          // changes how long it is while leaving how it starts alone. That is
+          // what lets the fuller reading replace the folded one in place
+          // instead of arriving as a second entry.
+          sig: hashOf(raw.slice(0, 140))
+        };
         textCache.set(el, seen);
       }
       return {
         el: el,
         role: finder.user(el) ? 'You' : 'Assistant',
         id: (el.getAttribute && el.getAttribute('data-message-id')) || '',
-        head: seen.head, len: seen.len
+        head: seen.head, len: seen.len, sig: seen.sig
       };
     });
   }
 
   // What names a message across a re-read: not where it sits, since the walk
-  // moves everything, and not its length, since unfolding one changes that.
+  // moves everything, and nothing that depends on the message having been
+  // drawn. A site id when there is one; otherwise its own text.
+  function hashOf(str) {
+    var h = 5381, i = str.length;
+    while (i) h = (h * 33 ^ str.charCodeAt(--i)) >>> 0;
+    return h.toString(36);
+  }
   function turnKey(t) {
-    return t.id || (t.role + '|' + t.head);
+    return t.id || (t.role + '|' + (t.sig || t.head));
   }
 
   // A message's body, read off the page. Blocks are what the exporters want:
@@ -2085,7 +2108,7 @@
   // Both sites load a long thread in pieces, so this is the part of it that is
   // on screen — scroll back and open what is collapsed, and it is more.
   function conversationTurns() {
-    var live = liveTurns();
+    var live = inReadingOrder(liveTurns());
     if (!live.length) return null;
     return live.map(function (t, i) {
       return { role: t.role, el: t.el, len: t.len, key: turnKey(t) };
@@ -2151,39 +2174,68 @@
 
   // One window of the thread, with its text taken now — the element will be
   // gone from the page by the time the walk reaches the bottom.
+  // The order a conversation is read in. A list that builds only what is on
+  // screen recycles its rows, so their order in the document is whatever the
+  // page last did with them and has nothing to do with the conversation. Where
+  // a message sits on the page does. This costs a layout, so it is asked only
+  // where order is the thing being decided — never on a tap.
+  function inReadingOrder(turns) {
+    var withY = turns.map(function (t, i) {
+      var y = i;
+      try { y = t.el.getBoundingClientRect().top; } catch (e) {}
+      return { t: t, y: y, i: i };
+    });
+    withY.sort(function (a, b) { return a.y - b.y || a.i - b.i; });
+    return withY.map(function (w) { w.t.y = w.y; return w.t; });
+  }
   function windowTurns() {
-    return liveTurns().map(function (t) {
+    return inReadingOrder(liveTurns()).map(function (t) {
       return {
-        role: t.role, el: t.el, id: t.id, head: t.head, len: t.len,
+        role: t.role, el: t.el, id: t.id, head: t.head, len: t.len, y: t.y,
         b: serializeBlocks(t.el), key: turnKey(t)
       };
     });
   }
-  function sameTurn(a, b) {
-    if (a.id && b.id) return a.id === b.id;
-    return a.role === b.role && a.head === b.head;
-  }
-  // Windows overlap, so the join is found rather than assumed: the longest run
-  // where what we hold ends the same way the new window begins. Matching a whole
-  // run instead of message-by-message is what keeps two identical messages two
-  // messages — "Yes." twice in a thread is not one message seen twice.
-  function stitch(acc, win) {
-    if (!acc.length) return win.slice();
-    if (!win.length) return acc;
-    var max = Math.min(acc.length, win.length), k = 0, n, i, ok;
-    for (n = max; n > 0; n--) {
-      ok = true;
-      for (i = 0; i < n; i++) {
-        if (!sameTurn(acc[acc.length - n + i], win[i])) { ok = false; break; }
+  // Putting the windows together.
+  //
+  // This used to look for the join — the longest run where what we hold ended
+  // the way the next window began — and fall back to appending the whole window
+  // when it could not find one. On a page that builds only what is on screen it
+  // could almost never find one, and a walk of a 58-message thread produced 421
+  // entries: seven copies of everything, in the order the windows happened to
+  // arrive. A method whose failure mode is "append it all again" is the wrong
+  // method, however well it does when it works.
+  //
+  // So nothing depends on finding the join. Each message is taken once, the
+  // first time it is met, and since the walk only ever goes downward, first-met
+  // is conversation order. A message met again is not appended; if that reading
+  // holds more of it — it was folded before and is open now — it replaces the
+  // one we have, in the place it already occupies.
+  //
+  // Two messages that genuinely read the same are kept apart by counting: a key
+  // seen twice within one window is allowed twice, three times three. Identical
+  // messages far enough apart to never share a window collapse into one, which
+  // is a small and rare loss next to seven copies of the thread.
+  function absorb(acc, win, have, at) {
+    var seenHere = {}, i;
+    for (i = 0; i < win.length; i++) {
+      var t = win[i], k = turnKey(t);
+      var n = (seenHere[k] = (seenHere[k] || 0) + 1);
+      var slot = k + '#' + n;
+      if (at[slot] === undefined) {
+        at[slot] = acc.length;
+        acc.push(t);
+        have[k] = n;
+      } else {
+        var held = acc[at[slot]];
+        // The same message, read again with more of it showing.
+        if ((t.len || 0) > (held.len || 0) ||
+            (t.b && held.b && t.b.join('\n').length > held.b.join('\n').length)) {
+          acc[at[slot]] = t;
+        }
       }
-      if (ok) { k = n; break; }
     }
-    for (i = 0; i < k; i++) {
-      var have = acc[acc.length - k + i], now = win[i];
-      // The same message, read again after it was unfolded: keep the fuller.
-      if ((now.len || 0) > (have.len || 0)) acc[acc.length - k + i] = now;
-    }
-    return acc.concat(win.slice(k));
+    return acc;
   }
 
   var HARVEST_MS = 90000;        // a ceiling, so a strange page cannot hang here
@@ -2194,7 +2246,7 @@
       if (!first) return resolve([]);
       var sc = scrollerFor(first.el);
       if (!sc) return resolve(windowTurns());      // nothing scrolls; this is all of it
-      var began = Date.now(), startTop = sc.scrollTop, acc = [];
+      var began = Date.now(), startTop = sc.scrollTop, acc = [], have = {}, at = {};
       var lastHeight = -1, still = 0;
       function done() {
         sc.scrollTop = startTop;                   // put the page back where it was
@@ -2223,7 +2275,7 @@
         setTimeout(function () {
           expandOnce();
           setTimeout(function () {
-            acc = stitch(acc, windowTurns());
+            acc = absorb(acc, windowTurns(), have, at);
             onProgress('Reading the conversation…', acc.length);
             var bottom = sc.scrollHeight - sc.clientHeight;
             if (spent() || pos >= bottom - 2) return done();

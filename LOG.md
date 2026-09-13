@@ -309,3 +309,28 @@ Append only. Never edit an entry after the fact.
   live in that sheet now, so the hint stopped naming either by its shape.
   Cards: text and Copy diagnosis were loose in the tray with nothing to group
   them; they sit behind a ⚙ now, which is the settings control we did not have.
+- **2026-09-13** — a walk of a 58-message thread produced 421 entries: seven
+  copies of everything, out of order. Two faults, and the second is the one
+  worth remembering.
+  The first was method. Windows were joined by looking for the longest run where
+  what we held ended the way the next window began, and when no such run was
+  found the whole window was appended. A method whose failure mode is "append it
+  all again" is the wrong method however well it does when it works. Each message
+  is now taken once, the first time it is met; since the walk only goes
+  downward, first-met is conversation order. A key seen twice inside one window
+  is allowed twice, which is what keeps two messages that read alike apart.
+  The second was why the join was never found. A list that builds only what is
+  on screen recycles its rows, so their order in the document is whatever the
+  page last did with them and has nothing to do with the conversation. The
+  windows were internally scrambled — which broke the match on every step and
+  was also, exactly, the "out of order" in the report. Turns are sorted by where
+  they sit on the page now, in the walk and in the picker both.
+  Two smaller things came out of it. Identity was taken from innerText, which is
+  what the page *renders*, so for a message that has not been laid out it reads
+  differently or not at all — it comes from textContent now, which is in the
+  document whether or not anything has been drawn. And it included the message's
+  length, so unfolding one changed what it was: the fuller reading arrived as a
+  second entry instead of replacing the folded one. It is the opening alone now.
+  The mock that finally reproduced this had to recycle its rows out of order. My
+  first two attempts passed on the broken version, which is the tell that a mock
+  is modelling what I assumed rather than what happens.
