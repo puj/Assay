@@ -65,6 +65,8 @@ non-affiliation line.
 >   conversation exports whole, not just the part still on screen
 > - Nothing runs in the background and nothing is stored between exports, so
 >   typing and scrolling in the chat stay exactly as fast as they were
+> - Dictate a note, or talk into a full-screen voice scratchpad — on-device
+>   recognition only, never sent to a server; tap a word to say it again
 > - Every conversation keeps its own list
 >
 > **Private by design**

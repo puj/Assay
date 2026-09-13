@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.20.2
+// @version      0.21.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.20.2';
+  var VERSION = '0.21.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -132,6 +132,7 @@
   }
 
   var sheetOpen = false;
+  var pad = null;          // the scratchpad, bound once the shell exists
 
   // ---------------------------------------------------------------- UI shell
   var host = document.createElement('div');
@@ -167,8 +168,8 @@
       'padding:10px 12px;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.4);z-index:26;' +
       'width:min(480px,calc(100vw - 16px))}' +
     '.notebox.show{display:flex}' +
-    '.notebox input{border:1px solid #374151;border-radius:8px;background:#1f2937;color:#f9fafb;' +
-      'padding:9px 10px;font-size:15px;outline:none}' +
+    '.notebox input,.notebox textarea{border:1px solid #374151;border-radius:8px;background:#1f2937;' +
+      'color:#f9fafb;padding:9px 10px;font-size:15px;outline:none;font-family:inherit}' +
     '.notebox .row{display:flex;gap:8px;align-items:center}' +
     '.posbtn{background:#1f2937;color:#9ca3af;font-size:13px;font-weight:600;border-radius:999px;padding:7px 12px}' +
     '.posbtn.on{background:#38bdf8;color:#0c1220}' +
@@ -256,6 +257,41 @@
     '.btn.warn{flex:0 0 auto;background:transparent;border:1px solid #d97706;color:#b45309;' +
       'font-size:13px;font-weight:600;padding:9px 12px;border-radius:10px}' +
     '.btn.minor.cog{flex:0 0 auto;padding:11px 13px;font-size:15px}' +
+    // The note input grows while you dictate, because a line that scrolls away
+    // as it is spoken is a line you cannot check.
+    '.noterow{display:flex;gap:8px;align-items:flex-end}' +
+    '#noteInput{flex:1;min-width:0;resize:none;max-height:38vh;overflow-y:auto;line-height:1.4}' +
+    '#noteInput.tall{min-height:22vh}' +
+    '.mic{flex:0 0 auto;width:44px;height:44px;border-radius:50%;background:#e2e8f0;color:#0f172a;font-size:18px}' +
+    '.mic.on{background:#dc2626;color:#fff;animation:pulse 1.4s ease-in-out infinite}' +
+    '@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}' +
+    '.interim{opacity:.55;font-style:italic}' +
+    // Near-fullscreen: a scratchpad is a place you are working, not a strip.
+    '.pad{position:fixed;left:0;right:0;top:0;bottom:0;display:none;flex-direction:column;' +
+      'background:#fff;color:#0f172a;z-index:6}' +
+    '.pad.show{display:flex}' +
+    '.pad header{display:flex;align-items:center;justify-content:space-between;' +
+      'padding:calc(10px + env(safe-area-inset-top)) 16px 8px}' +
+    '.pad header h2{margin:0;font-size:17px;font-weight:700}' +
+    '.pad header .close{font-size:22px;line-height:1;padding:4px 10px;color:#64748b}' +
+    '.padwrap{flex:1;overflow-y:auto;padding:4px 16px 8px;-webkit-overflow-scrolling:touch}' +
+    '.padtext{font-size:17px;line-height:1.55;white-space:pre-wrap;word-wrap:break-word;min-height:100%}' +
+    '.padtext p{margin:0 0 14px}' +
+    '.padtext .sel{background:rgba(56,189,248,.34);border-radius:3px}' +
+    '.padtext .empty{color:#94a3b8}' +
+    '.padbar{display:none;gap:8px;padding:0 14px 8px}' +
+    '.padbar.show{display:flex}' +
+    '.padask{display:none;align-items:center;gap:8px;margin:0 16px 10px;padding:9px 11px;border-radius:10px;' +
+      'font-size:12.5px;line-height:1.35;background:#fffbeb;color:#92400e;border:1px solid #fcd34d}' +
+    '.padask.show{display:flex}' +
+    '.padask span{flex:1;min-width:0}' +
+    '.padask .btn{flex:0 0 auto;padding:8px 11px;font-size:13px}' +
+    '.padfoot{display:flex;justify-content:center;padding:4px 14px 0}' +
+    '.rec{display:flex;align-items:center;gap:10px;padding:13px 22px;border-radius:999px;' +
+      'background:#0f172a;color:#f8fafc;font-size:15px;font-weight:700}' +
+    '.rec .dot{width:11px;height:11px;border-radius:50%;background:#94a3b8}' +
+    '.rec.on{background:#dc2626}' +
+    '.rec.on .dot{background:#fff;animation:pulse 1.4s ease-in-out infinite}' +
     '.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:60px;background:#111827;color:#f9fafb;' +
       'padding:10px 18px;border-radius:999px;font-size:14px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.35);' +
       'opacity:0;transition:opacity .25s;pointer-events:none;z-index:30;max-width:86vw;text-align:center}' +
@@ -271,6 +307,11 @@
       '.btn.minor{background:#334155;color:#cbd5e1}' +
       '.btn.warn{border-color:#a16207;color:#fbbf24}' +
       '.strip.ask{background:#3a2c07;color:#fde68a;border-color:#854d0e}' +
+      '.pad{background:#0b1220;color:#e2e8f0}' +
+      '.padtext .empty{color:#64748b}' +
+      '.mic{background:#334155;color:#e2e8f0}' +
+      '.rec{background:#1e293b}' +
+      '.padask{background:#3a2c07;color:#fde68a;border-color:#854d0e}' +
       '.empty{color:#94a3b8}' +
       '.manual textarea{background:#1e293b;border-color:#475569;color:#e2e8f0}' +
       '.pick .row{background:#1e293b;border-color:#334155}' +
@@ -295,7 +336,10 @@
       '<div class="verbs" id="barVerbs"></div>' +
     '</div>' +
     '<div class="notebox" id="notebox">' +
-      '<input id="noteInput" type="text" placeholder="annotation &mdash; e.g. &ldquo;formalize this&rdquo;">' +
+      '<div class="noterow">' +
+        '<textarea id="noteInput" rows="1" placeholder="annotation &mdash; e.g. &ldquo;formalize this&rdquo;"></textarea>' +
+        '<button class="mic" id="noteMic" title="Dictate">&#x1F3A4;</button>' +
+      '</div>' +
       '<div class="verbs" id="noteVerbs"></div>' +
       '<div class="row">' +
         '<button class="posbtn" id="posPre">before</button>' +
@@ -314,6 +358,9 @@
         '<button class="btn minor" id="mdBtn">&#x2B07; .md</button>' +
         '<button class="btn minor" id="txtBtn">&#x2B07; .txt</button>' +
         '<button class="btn minor cog" id="cogBtn" title="Settings">&#x2699;</button>' +
+      '</div>' +
+      '<div class="actions">' +
+        '<button class="btn minor" id="padBtn">&#x1F3A4; Voice scratchpad</button>' +
       '</div>' +
       '<div class="actions actions-settings off" id="settingsRow">' +
         '<button class="btn minor" id="flatBtn" title="Read cards the site made editable as ordinary text">Cards: text</button>' +
@@ -345,6 +392,28 @@
       '</div>' +
       '<div class="actions last">' +
         '<button class="btn go" id="pickGo">&#x2B07; Download</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="pad" id="pad">' +
+      '<header><h2>Voice scratchpad</h2><button class="close" id="padClose">&#x2715;</button></header>' +
+      '<div class="padwrap"><div class="padtext" id="padText"></div></div>' +
+      '<div class="padbar" id="padBar">' +
+        '<button class="btn minor" id="padReword">&#x1F3A4; Say it again</button>' +
+        '<button class="btn minor" id="padCut">Delete</button>' +
+        '<button class="btn minor" id="padPick">&#xFF0B; Collect</button>' +
+      '</div>' +
+      '<div class="padask" id="padAsk"><span id="padAskMsg"></span>' +
+        '<button class="btn minor" id="padAskNo">Not now</button>' +
+        '<button class="btn warn" id="padAskYes">Download</button></div>' +
+      '<div class="padfoot">' +
+        '<button class="rec" id="padRec"><span class="dot"></span><span id="padRecLabel">Dictate</span></button>' +
+      '</div>' +
+      '<div class="actions">' +
+        '<button class="btn minor" id="padCopy">&#x29C9; Copy</button>' +
+        '<button class="btn minor" id="padClear">Clear</button>' +
+      '</div>' +
+      '<div class="actions last">' +
+        '<button class="btn go" id="padSend"></button>' +
       '</div>' +
     '</div>' +
     '<div class="toast" id="toast"></div>';
@@ -485,7 +554,8 @@
     // The picker is a decision, not a place to keep collecting: the pill would
     // only sit over its rows.
     // (`picker` is bound further down; before that there is nothing to hide.)
-    pill.classList.toggle('show', !(picker && picker.classList.contains('show')));
+    pill.classList.toggle('show', !((picker && picker.classList.contains('show')) ||
+      (pad && pad.classList.contains('show'))));
     positionPill();
   }
 
@@ -1382,6 +1452,8 @@
     renderVerbs($('noteVerbs'), setNoteVerb, function (v) { return v === noteVerb; });
     $('noteInput').value = f ? (f.note || '') : '';
     $('noteAdd').textContent = f ? 'Save' : 'Add';
+    $('noteInput').classList.remove('tall');
+    $('noteInput').style.height = '';
     notebox.classList.add('show');
     placeNotebox();
     $('noteInput').focus();
@@ -1404,7 +1476,9 @@
   }
   $('noteAdd').addEventListener('click', noteboxAdd);
   $('noteInput').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') noteboxAdd();
+    // It grew a second dimension for dictation, but it is still a one-line
+    // thought: Enter adds it. Shift-Enter is there if you really want a break.
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); noteboxAdd(); }
   });
   guardInput($('noteInput'));
   guardInput($('manualTxt'));
@@ -2135,6 +2209,110 @@
     });
   }
 
+  // --------------------------------------------------------------- voice
+  // Dictation, on the device or not at all.
+  //
+  // The browser will happily do speech recognition by sending your microphone
+  // to a server, and it is the default. Assay's whole claim is that nothing it
+  // reads leaves the machine, so the server path is not a fallback here — it is
+  // simply not used. Before listening starts, the browser is asked whether it
+  // can recognise this language locally; if it says it could with a language
+  // pack, you are asked whether to fetch one; if it says it cannot, you are
+  // told that, rather than quietly dictating into somebody's datacentre.
+  var VOICE_KEY = 'assay.voice.v1';
+  function voiceCtor() { return window.SpeechRecognition || window.webkitSpeechRecognition; }
+  function voiceLang() {
+    return loadJSON(VOICE_KEY, {}).lang || (navigator.language || 'en-US');
+  }
+  // 'nosupport'  — no speech recognition at all (Firefox, today, everywhere)
+  // 'nolocal'    — speech recognition, but no way to demand it stays local
+  // 'unavailable'| 'downloadable' | 'downloading' | 'available'
+  function voiceStatus(cb) {
+    var C = voiceCtor();
+    if (!C) return cb('nosupport');
+    if (!C.available) return cb('nolocal');
+    var opts = { langs: [voiceLang()], processLocally: true };
+    try {
+      var r = C.available(opts);
+      if (r && r.then) r.then(function (v) { cb(v || 'unavailable'); }, function () { cb('unavailable'); });
+      else cb(r || 'unavailable');
+    } catch (e) { cb('unavailable'); }
+  }
+  function voiceInstall(cb) {
+    var C = voiceCtor();
+    if (!C || !C.install) return cb(false);
+    try {
+      var r = C.install({ langs: [voiceLang()], processLocally: true });
+      if (r && r.then) r.then(function (v) { cb(v !== false); }, function () { cb(false); });
+      else cb(!!r);
+    } catch (e) { cb(false); }
+  }
+  function voiceErrorText(code) {
+    if (code === 'not-allowed' || code === 'service-not-allowed') {
+      return 'The microphone is blocked. Allow it for this site and try again.';
+    }
+    if (code === 'no-speech') return 'Heard nothing.';
+    if (code === 'audio-capture') return 'No microphone was found.';
+    if (code === 'language-not-supported') return 'This language is not available on the device.';
+    if (code === 'network') return 'That needed the network, so it was stopped.';
+    return 'Dictation stopped.';
+  }
+
+  var rec = null, recOn = false;
+  function listening() { return recOn; }
+  function stopListening() {
+    recOn = false;
+    if (!rec) return;
+    try { rec.onend = null; rec.onresult = null; rec.onerror = null; rec.stop(); } catch (e) {}
+    rec = null;
+  }
+  function startListening(h) {
+    var C = voiceCtor();
+    if (!C) { h.error('This browser cannot do speech recognition.'); return; }
+    stopListening();
+    rec = new C();
+    rec.lang = voiceLang();
+    rec.continuous = true;
+    rec.interimResults = true;
+    // The point of the whole exercise.
+    try { rec.processLocally = true; } catch (e) {}
+    rec.onresult = function (e) {
+      var interim = '', fin = '';
+      for (var i = e.resultIndex; i < e.results.length; i++) {
+        var r = e.results[i];
+        if (r.isFinal) fin += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      if (fin) h.final(fin);
+      h.interim(interim);
+    };
+    rec.onerror = function (e) {
+      var code = e && e.error;
+      recOn = false;
+      h.error(voiceErrorText(code));
+    };
+    rec.onend = function () { recOn = false; if (h.end) h.end(); };
+    recOn = true;
+    try { rec.start(); } catch (e) { recOn = false; h.error('Could not start listening.'); }
+  }
+
+  // Everything above is only reached through here, so there is exactly one
+  // place that decides whether dictating is allowed to begin.
+  function withVoice(onReady, onRefuse) {
+    voiceStatus(function (st) {
+      if (st === 'available') return onReady();
+      if (st === 'downloading') return onRefuse('The language pack is still downloading. Try again in a moment.', false);
+      if (st === 'downloadable') return onRefuse('', true);
+      if (st === 'nosupport') {
+        return onRefuse('This browser has no speech recognition. Firefox does not have it yet, on Android or anywhere else.', false);
+      }
+      if (st === 'nolocal') {
+        return onRefuse('This browser can only recognise speech by sending it to a server, so Assay will not use it.', false);
+      }
+      onRefuse('Speech recognition is not available on this device for ' + voiceLang() + '.', false);
+    });
+  }
+
   // ------------------------------------------------- harvesting the whole thing
   // Neither site keeps a long conversation in the page. Older messages are only
   // built when you scroll back to them, and long ones stay folded behind "show
@@ -2724,6 +2902,302 @@
   }
   $('mdBtn').addEventListener('click', function () { exportConversation('md', 'text/markdown'); });
   $('txtBtn').addEventListener('click', function () { exportConversation('txt', 'text/plain'); });
+
+  // ------------------------------------------------------------ dictation
+  // One dictation at a time, and it always knows where the words are going.
+  pad = $('pad');
+  var padTextEl = $('padText');
+  var PAD_KEY = 'assay.scratch.v1';
+  var padBody = loadJSON(PAD_KEY, {}).text || '';
+  var padSel = null;          // {start, end, scope} over padBody
+  var padBlocks = null;
+  var voiceTarget = null;     // 'note' | 'pad' | 'padReplace'
+  var noteBase = '';          // what the note held before this dictation began
+
+  function savePad() { saveMap(PAD_KEY, { text: padBody, ts: Date.now() }); }
+
+  // Two panels in one: an offer, and a plain no. A no that still shows a
+  // Download button is a lie about what pressing it would do.
+  function padAsk(msg, offer) {
+    $('padAskMsg').textContent = msg ||
+      ('Dictation runs on this device. The language pack for ' + voiceLang() +
+       ' has to be fetched once by the browser — not by Assay, and not from us. ' +
+       'After that it works with no network at all.');
+    $('padAskYes').style.display = offer ? '' : 'none';
+    $('padAskNo').textContent = offer ? 'Not now' : 'OK';
+    $('padAsk').classList.add('show');
+  }
+  function padAskHide() { $('padAsk').classList.remove('show'); }
+
+  // The only way dictation starts. Refusals are explained where they happen.
+  function dictate(target) {
+    withVoice(function () { beginDictation(target); }, function (msg, offer) {
+      if (offer) {
+        pendingTarget = target;
+        if (!pad.classList.contains('show')) openPad();
+        padAsk('', true);
+        return;
+      }
+      if (pad.classList.contains('show')) padAsk(msg, false);
+      else toast(msg, 4000);
+    });
+  }
+  var pendingTarget = null;
+  $('padAskNo').addEventListener('click', function () { padAskHide(); pendingTarget = null; });
+  $('padAskYes').addEventListener('click', function () {
+    $('padAskMsg').textContent = 'Fetching the language pack…';
+    voiceInstall(function (ok) {
+      padAskHide();
+      if (!ok) { toast('The language pack could not be fetched', 3200); return; }
+      var t = pendingTarget || 'pad';
+      pendingTarget = null;
+      dictate(t);
+    });
+  });
+
+  function paintDictating(on) {
+    $('noteMic').classList.toggle('on', on && voiceTarget === 'note');
+    $('noteInput').classList.toggle('tall', on && voiceTarget === 'note');
+    var pr = $('padRec');
+    pr.classList.toggle('on', on && voiceTarget !== 'note');
+    $('padRecLabel').textContent = (on && voiceTarget !== 'note') ? 'Stop' : 'Dictate';
+  }
+
+  function beginDictation(target) {
+    voiceTarget = target;
+    if (target === 'note') {
+      noteBase = $('noteInput').value;
+      if (noteBase && !/\s$/.test(noteBase)) noteBase += ' ';
+    }
+    paintDictating(true);
+    startListening({
+      interim: function (text) {
+        if (voiceTarget === 'note') {
+          $('noteInput').value = noteBase + text;
+          growNote();
+        } else {
+          renderPad(text);
+        }
+      },
+      final: function (text) {
+        var t = text.replace(/^\s+/, '');
+        if (!t) return;
+        if (voiceTarget === 'note') {
+          noteBase = noteBase + t + ' ';
+          $('noteInput').value = noteBase;
+          growNote();
+          return;
+        }
+        if (voiceTarget === 'padReplace' && padSel) {
+          padBody = padBody.slice(0, padSel.start) + t + padBody.slice(padSel.end);
+          padSel = { start: padSel.start, end: padSel.start + t.length, scope: 'word' };
+          voiceTarget = 'pad';          // the replacement is done; keep going as normal
+        } else {
+          padBody = padBody + (padBody && !/\s$/.test(padBody) ? ' ' : '') + t;
+        }
+        savePad();
+        renderPad('');
+      },
+      error: function (msg) {
+        paintDictating(false);
+        voiceTarget = null;
+        toast(msg, 3600);
+      },
+      end: function () { paintDictating(false); voiceTarget = null; }
+    });
+  }
+  function endDictation() {
+    stopListening();
+    paintDictating(false);
+    voiceTarget = null;
+  }
+  function growNote() {
+    var el = $('noteInput');
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.38)) + 'px';
+    el.scrollTop = el.scrollHeight;
+  }
+  $('noteInput').addEventListener('input', growNote);
+  $('noteMic').addEventListener('click', function () {
+    if (listening() && voiceTarget === 'note') return endDictation();
+    dictate('note');
+  });
+  $('padRec').addEventListener('click', function () {
+    if (listening() && voiceTarget !== 'note') return endDictation();
+    dictate('pad');
+  });
+
+  // ---- the scratchpad
+  // Rendered from the string every time, so an offset means the same thing
+  // before and after a selection is painted into it.
+  function renderPad(interim) {
+    padTextEl.textContent = '';
+    var text = padBody;
+    if (!text && !interim) {
+      var e = document.createElement('p');
+      e.className = 'empty';
+      e.textContent = 'Nothing yet. Press Dictate and talk — the words land here, and you can tap one to change it.';
+      padTextEl.appendChild(e);
+      padBlocks = null;
+      paintPadBar();
+      return;
+    }
+    var paras = text.split(/\n{2,}/);
+    var at = 0;
+    paras.forEach(function (para, i) {
+      var p = document.createElement('p');
+      var start = at, end = at + para.length;
+      if (padSel && padSel.start < end && padSel.end > start) {
+        var a = Math.max(padSel.start, start) - start, b = Math.min(padSel.end, end) - start;
+        if (a > 0) p.appendChild(document.createTextNode(para.slice(0, a)));
+        var sp = document.createElement('span');
+        sp.className = 'sel';
+        sp.textContent = para.slice(a, b);
+        p.appendChild(sp);
+        if (b < para.length) p.appendChild(document.createTextNode(para.slice(b)));
+      } else {
+        p.textContent = para;
+      }
+      padTextEl.appendChild(p);
+      at = end + 2;
+    });
+    if (interim) {
+      var live = document.createElement('p');
+      var sp2 = document.createElement('span');
+      sp2.className = 'interim';
+      sp2.textContent = interim;
+      live.appendChild(sp2);
+      padTextEl.appendChild(live);
+      padTextEl.parentNode.scrollTop = padTextEl.parentNode.scrollHeight;
+    }
+    padBlocks = buildBlocks(padTextEl);
+    paintPadBar();
+  }
+  function paintPadBar() {
+    $('padBar').classList.toggle('show', !!padSel);
+    $('padSend').innerHTML = IS_GITHUB ? '&#x29C9; Copy notes' : '&#x2197; To composer';
+    $('padSend').disabled = !padBody;
+  }
+
+  // The same idea as the page: tap a word, tap again to widen, tap away to drop
+  // it. Here it is for changing what you said rather than collecting it.
+  // Where in the text a tap landed. The page's own caret lookup is no use
+  // here: the scratchpad lives in a shadow root, and the browser hands back the
+  // host element rather than the word. The characters are measured instead,
+  // which is affordable because this only ever runs on a tap and the scratchpad
+  // is as long as a thought, not a thread.
+  function padPointAt(e) {
+    var path = e.composedPath ? e.composedPath() : [e.target], p = null, i;
+    for (i = 0; i < path.length; i++) {
+      if (path[i].nodeType === 1 && path[i].tagName === 'P' && padTextEl.contains(path[i])) { p = path[i]; break; }
+    }
+    if (!p) return null;
+    var walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, null);
+    var r = document.createRange(), n, best = null, bestD = Infinity;
+    while ((n = walker.nextNode())) {
+      var v = n.nodeValue || '';
+      for (var k = 0; k < v.length; k++) {
+        try { r.setStart(n, k); r.setEnd(n, k + 1); } catch (err) { continue; }
+        var rc = r.getBoundingClientRect();
+        if (!rc.width && !rc.height) continue;
+        var dx = e.clientX < rc.left ? rc.left - e.clientX : (e.clientX > rc.right ? e.clientX - rc.right : 0);
+        var dy = e.clientY < rc.top ? rc.top - e.clientY : (e.clientY > rc.bottom ? e.clientY - rc.bottom : 0);
+        var d = dx + dy * 4;   // a miss on the wrong line is worse than a miss along one
+        if (d < bestD) { bestD = d; best = { node: n, offset: k }; if (!d) return best; }
+      }
+    }
+    return best;
+  }
+  padTextEl.addEventListener('click', function (e) {
+    if (!padBody) return;
+    var pt = padPointAt(e);
+    if (!pt || !padBlocks) { padSel = null; renderPad(''); return; }
+    var off = absOffset(padBlocks, pt.node, pt.offset);
+    if (off == null) { padSel = null; renderPad(''); return; }
+    var b = blockAt(padBlocks, off);
+    if (!b) { padSel = null; renderPad(''); return; }
+    var inside = padSel && off >= padSel.start && off < padSel.end;
+    var next;
+    if (!inside) {
+      var w = wordAt(b.words, off);
+      next = w ? { start: w.start, end: w.end, scope: 'word' } : null;
+    } else if (padSel.scope === 'word') {
+      var sb = sentenceBounds(b.sentences, padSel.start, padSel.end);
+      next = sb ? { start: sb.start, end: sb.end, scope: 'sentence' } : null;
+    } else if (padSel.scope === 'sentence') {
+      next = { start: b.start, end: b.end, scope: 'paragraph' };
+    } else {
+      next = null;   // round the cycle and back to nothing
+    }
+    padSel = next;
+    renderPad('');
+  });
+
+  $('padReword').addEventListener('click', function () {
+    if (!padSel) return;
+    dictate('padReplace');
+  });
+  $('padCut').addEventListener('click', function () {
+    if (!padSel) return;
+    padBody = (padBody.slice(0, padSel.start) + padBody.slice(padSel.end)).replace(/[ \t]{2,}/g, ' ').trim();
+    padSel = null;
+    savePad();
+    renderPad('');
+  });
+  $('padPick').addEventListener('click', function () {
+    if (!padSel) return;
+    var t = padBody.slice(padSel.start, padSel.end).trim();
+    if (t.length < MIN_SEL_LEN) { toast('Too short to collect'); return; }
+    addFragment(t);
+    toast('Collected');
+  });
+  $('padCopy').addEventListener('click', function () {
+    if (!padBody) return;
+    copyText(padBody).then(function (ok) { toast(ok ? 'Copied' : 'Could not copy'); });
+  });
+  $('padClear').addEventListener('click', function () {
+    if (!padBody) return;
+    padBody = '';
+    padSel = null;
+    savePad();
+    renderPad('');
+    toast('Scratchpad cleared');
+  });
+  // Insertion: the words go where you were going to type them.
+  $('padSend').addEventListener('click', function () {
+    var text = padSel ? padBody.slice(padSel.start, padSel.end).trim() : padBody.trim();
+    if (!text) return;
+    if (IS_GITHUB) {
+      copyText(text).then(function (ok) { toast(ok ? 'Copied' : 'Could not copy'); });
+      return;
+    }
+    if (insertIntoComposer(text)) {
+      closePad();
+      toast(padSel ? 'Put in the message box' : 'Scratchpad put in the message box', 2400);
+    } else {
+      copyText(text).then(function (ok) { toast(ok ? 'No message box here — copied instead' : 'Could not copy', 3000); });
+    }
+  });
+
+  function openPad() {
+    hideChip();
+    clearPending();
+    closeSheet();
+    padSel = null;
+    pad.classList.add('show');
+    padAskHide();
+    paintDictating(listening());
+    renderPad('');
+    updatePill();
+  }
+  function closePad() {
+    endDictation();
+    padAskHide();
+    pad.classList.remove('show');
+    updatePill();
+  }
+  $('padBtn').addEventListener('click', openPad);
+  $('padClose').addEventListener('click', function () { closePad(); openSheet(); });
 
   // ------------------------------------------------------------- composing
   function findComposer() {

@@ -49,6 +49,15 @@ It reads nothing on any other website, and it does not run anywhere else.
   marks those cards as not-editable so they read as ordinary text. No words are
   changed, nothing is sent, and **Cards: editable** in the tray undoes it. The
   message box is never touched.
+- **Your voice, only while you are dictating, and only to your own device.**
+  The microphone is opened when you press Dictate and closed when you stop.
+  Before it opens, the browser is asked whether it can recognise your language
+  **locally**; if it can only do it by sending audio to a server, Assay does not
+  use it and tells you so. If a language pack is needed, you are asked first and
+  the **browser** fetches it — not Assay, and not from us. Audio is never
+  recorded, never stored and never sent anywhere by Assay.
+- **The scratchpad you dictate into**, in local storage on the site, so it is
+  still there when you come back. **Clear** empties it.
 - **The composed prompt**, into that site's own message box, when you press
   ↗ To composer. Nothing is ever sent for you — you review it and press send.
 - **A copy of that text to your clipboard**, when you press ⧉ Copy notes on a

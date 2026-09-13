@@ -334,3 +334,24 @@ Append only. Never edit an entry after the fact.
   The mock that finally reproduced this had to recycle its rows out of order. My
   first two attempts passed on the broken version, which is the tell that a mock
   is modelling what I assumed rather than what happens.
+- **2026-09-13** — voice. A mic in the note box, which grows while you dictate
+  so the words are visible as they land, and a near-fullscreen scratchpad in the
+  tray you can talk into. The scratchpad selects the way the page does — tap a
+  word, tap again for the sentence — and then Say it again replaces just that
+  part, which is the thing dictation normally cannot do. Insertion is the point
+  of the whole thing: ↗ To composer sends the scratchpad, or only the selected
+  passage, into the chat's message box; ＋ Collect makes a fragment of it.
+  The decision that mattered was refusing to fall back. A browser will happily
+  recognise speech by sending your microphone to a server and that is the
+  default, so before listening starts it is asked whether it can do this
+  language locally, and if it can only do it remotely Assay declines and says
+  why. A language pack is asked for before it is fetched, and the browser
+  fetches it — not us.
+  Which leaves a hole worth naming: Firefox has no speech recognition at all, on
+  Android or anywhere, and Firefox Android is where this thing is actually used.
+  The honest refusal is implemented and tested; whether to close the hole with a
+  bundled recogniser is a question, not a patch.
+  Two things the tests could not have caught and a screenshot did: a refusal
+  with nothing to download still offered a Download button, and the scratchpad's
+  taps landed nowhere because the page's caret lookup does not reach into a
+  shadow root — it measures characters now.

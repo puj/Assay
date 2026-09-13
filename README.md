@@ -193,6 +193,14 @@ You can now. Those canvas cards are rendered as editors, and an editor fights a 
 **Something isn't working and I'm on a phone with no console.**
 Open the tray, press **⚙**, then **ⓘ Copy diagnosis**. It copies what Assay can see on that page — which message-finder matched, how many turns it found, and what it thinks each editable on the page is — which is what a bug report needs.
 
+**Can I dictate instead of typing?**
+Yes, where the browser can do it **on the device**. The note box has a mic, and the tray has a **🎤 Voice scratchpad** — a near-fullscreen page you can talk into, with the words appearing as you say them. Tap a word in the scratchpad to select it, tap again for the sentence, then **Say it again** to replace just that part, **Delete** it, or **＋ Collect** it as a fragment. **↗ To composer** puts the scratchpad (or just the selected part) into the chat's message box.
+
+The first time, the browser may need a language pack; Assay asks before anything is fetched, and the browser fetches it, not us. After that it works with no network at all.
+
+**Why won't voice work in my browser?**
+Because Assay will not dictate into somebody else's datacentre. Browsers do speech recognition by sending your microphone to a server unless told otherwise, so Assay only uses recognition it can pin to your device — and says so plainly when it can't. Today that means Chrome and Edge. **Firefox has no speech recognition at all**, on Android or anywhere else, so the mic will tell you that rather than pretending.
+
 **Does it auto-send anything?**
 Never. ↗ To composer only fills the message box.
 
