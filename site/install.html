@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.22.4
+// @version      0.23.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -250,7 +250,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.22.4';
+  var VERSION = '0.23.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2509,7 +2509,54 @@
   var WASM_CACHE = 'assay-voice-v1';
   var wasmModel = null, wasmCtx = null, wasmNode = null, wasmStream = null;
 
-  function wasmPossible() { return !IN_EXTENSION && !!(window.AudioContext || window.webkitAudioContext); }
+  // The engine is either already here — packaged with the extension, which is
+  // the only way an extension may have it — or it is something a userscript can
+  // go and fetch. Where it comes from changes nothing after this line.
+  //
+  // It is found by looking in three places because a content script's globals
+  // are not the page's: the bundle assigns to `globalThis`, which in an
+  // extension is the content script's own scope and not `window` at all.
+  function voskLib() {
+    try {
+      if (typeof Vosk !== 'undefined' && Vosk && Vosk.createModel) return Vosk;
+    } catch (e) {}
+    try {
+      if (typeof globalThis !== 'undefined' && globalThis.Vosk && globalThis.Vosk.createModel) return globalThis.Vosk;
+    } catch (e) {}
+    if (window.Vosk && window.Vosk.createModel) return window.Vosk;
+    return null;
+  }
+  // Where the packaged engine lives, if this build has one. It is deliberately
+  // not a content script: 5.8MB parsed on every chat page you open, forever,
+  // for a feature most people never touch, is exactly the cost this thing spent
+  // four versions learning not to impose. It is packaged but inert, and loaded
+  // the first time somebody presses Dictate.
+  function packagedEngineUrl() {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+        return chrome.runtime.getURL('vosk.js');
+      }
+      if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.getURL) {
+        return browser.runtime.getURL('vosk.js');
+      }
+    } catch (e) {}
+    return '';
+  }
+  function loadPackagedEngine(cb) {
+    if (voskLib()) return cb(true);
+    var url = packagedEngineUrl();
+    if (!url) return cb(false);
+    // A dynamic import of a packaged file: it is our own code, shipped in the
+    // package, which is the only kind an extension may run.
+    try {
+      import(/* webpackIgnore: true */ url).then(function () { cb(!!voskLib()); },
+        function () { cb(false); });
+    } catch (e) { cb(false); }
+  }
+  function wasmPossible() {
+    if (!(window.AudioContext || window.webkitAudioContext)) return false;
+    return !!voskLib() || !!packagedEngineUrl() || !IN_EXTENSION;
+  }
   function wasmReady() { return !!wasmModel; }
 
   // Fetched once, then kept in the browser's cache, so the second time you
@@ -2577,12 +2624,20 @@
 
   function wasmInstall(onProgress, cb) {
     if (wasmReady()) return cb(true);
+    // Packaged: nothing to fetch but the model.
+    if (voskLib() || packagedEngineUrl()) {
+      onProgress(0, 'Starting the recogniser…');
+      return loadPackagedEngine(function (ok) {
+        if (!ok) return cb(false, 'The packaged recogniser would not start.');
+        withEngine(onProgress, cb);
+      });
+    }
     onProgress(0, 'Fetching the recogniser…');
     cachedFetch(voiceBase() + 'vosk.js', function (f) { onProgress(f * 0.2, 'Fetching the recogniser…'); }, function (blob, why) {
       if (!blob) return cb(false, why || 'The recogniser could not be fetched.');
       blob.text().then(function (src) {
         try {
-          if (!window.Vosk) {
+          if (!voskLib()) {
             // The recogniser ships as a UMD bundle, which picks CommonJS if the
             // page happens to have `module`/`exports` defined — plenty of pages
             // do — and then sets nothing on window. Shadowing all three names
@@ -2591,7 +2646,15 @@
             run(undefined, undefined, undefined);   // page context only; never in an extension
           }
         } catch (e) { return cb(false, 'The recogniser could not be started: ' + (e && e.message)); }
-        if (!window.Vosk || !window.Vosk.createModel) return cb(false, 'The recogniser did not load.');
+        if (!voskLib()) return cb(false, 'The recogniser did not load.');
+        withEngine(onProgress, cb);
+      }, function () { cb(false, 'The recogniser could not be read.'); });
+    });
+  }
+
+  // Everything from "we have an engine" onwards, which is the same whether it
+  // was packaged or fetched.
+  function withEngine(onProgress, cb) {
         onProgress(0.2, 'Fetching the language model…');
         // The primary subtag, not the whole locale: there is one English model,
         // and asking for model-en-gb.zip because that is how the browser spells
@@ -2620,7 +2683,7 @@
         };
         var gotModel = function (mblob) {
           var u = URL.createObjectURL(mblob);
-          window.Vosk.createModel(u).then(function (m) {
+          voskLib().createModel(u).then(function (m) {
             wasmModel = m;
             try { URL.revokeObjectURL(u); } catch (e) {}
             cb(true);
@@ -2629,8 +2692,6 @@
           });
         };
         tryModel(0, '');
-      }, function () { cb(false, 'The recogniser could not be read.'); });
-    });
   }
 
   function wasmStart(h) {
@@ -2728,8 +2789,8 @@
           : 'This browser has no speech recognition of its own. Assay can fetch one that runs on this device.', 'engine');
       }
       if (st === 'nosupport') {
-        return onRefuse('This browser has no speech recognition, and an extension may not fetch one. ' +
-          'The userscript can, or use Chrome or Edge.', false);
+        return onRefuse('This browser has no speech recognition, and none is packaged with this build. ' +
+          'Use Chrome or Edge, which have one of their own.', false);
       }
       if (st === 'nolocal') {
         return onRefuse('This browser can only recognise speech by sending it to a server, so Assay will not use it.', false);

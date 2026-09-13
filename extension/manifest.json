@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Assay: Deep Dive for AI Chats",
-  "version": "0.22.4",
+  "version": "0.23.0",
   "description": "Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive prompt. 100% local, no account.",
   "homepage_url": "https://www.projectnothing.ai",
   "icons": {
@@ -38,5 +38,19 @@
     "gecko_android": {
       "strict_min_version": "121.0"
     }
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "vosk.js"
+      ],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://github.com/*",
+        "https://gist.github.com/*"
+      ]
+    }
+  ]
 }

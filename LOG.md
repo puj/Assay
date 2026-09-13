@@ -432,3 +432,24 @@ Append only. Never edit an entry after the fact.
   A mock cannot settle this: route interception does not enforce CORS, so the
   two fetch modes are driven directly. Worth remembering — a network mock that
   answers every request cannot reproduce a browser refusing to read an answer.
+- **2026-09-13** — the engine is packaged, because the download route was never
+  going to work. A chat page's own connect-src policy will not let a script
+  running inside it fetch anything from another origin, which is what defeated
+  it on chatgpt.com and github.com alike; no header on our side fixes that. A
+  content script is not bound by the page's policy, so the extension can carry
+  the engine and fetch the model, and the userscript cannot do either — there,
+  voice is whatever the browser itself offers, and it says so.
+  Two things that mattered more than the decision. It is not a content script:
+  5.8MB parsed on every chat page you open, forever, for a feature most people
+  never touch, is exactly the cost this thing spent four versions learning not
+  to impose. It is a web-accessible resource, imported the first time somebody
+  presses Dictate, and there is a test that opening a page loads none of it.
+  And the bundle assigns to globalThis, which in a content script is not window
+  — so it is looked for in all three places rather than the one that happens to
+  work in a page.
+  No host permission was added. The model is served with
+  Access-Control-Allow-Origin: *, so an ordinary cross-origin fetch reaches it,
+  and declaring a permission would re-prompt every existing user on update and
+  widen the store review for nothing. The zip is 2.4MB compressed; VOSK-SOURCE.md
+  records what the file is, its hash, and the two commands that reproduce it
+  from the registry, because a reviewer is going to ask.

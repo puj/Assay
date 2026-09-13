@@ -83,7 +83,7 @@ try {
   const pin = new Date('2026-01-01T00:00:00Z');
   const walk = (p) => { fs.utimesSync(p, pin, pin); if (fs.statSync(p).isDirectory()) fs.readdirSync(p).forEach(n => walk(path.join(p, n))); };
   walk(stage);
-  execSync('cd "' + stage + '" && rm -f "' + path.join(dir, 'assay-extension.zip') + '" && zip -q -X -r -D "' + path.join(dir, 'assay-extension.zip') + '" manifest.json assay.js icons', { stdio: 'pipe' });
+  execSync('cd "' + stage + '" && rm -f "' + path.join(dir, 'assay-extension.zip') + '" && zip -q -X -r -D "' + path.join(dir, 'assay-extension.zip') + '" manifest.json assay.js vosk.js icons', { stdio: 'pipe' });
   fs.rmSync(stage, { recursive: true, force: true });
   zipNote = 'assay-extension.zip';
 } catch (e) {}

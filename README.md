@@ -202,9 +202,11 @@ The first time, the browser may need a language pack; Assay asks before anything
 On your device, always — Assay will not dictate into somebody else's datacentre. Browsers do speech recognition by sending your microphone to a server unless told otherwise, so Assay uses only recognition it can pin to the device, by one of two routes:
 
 - **Chrome and Edge** have on-device recognition built in. They may need a language pack; Assay asks first, and the browser fetches it.
-- **Everywhere else — including Firefox, which has no speech recognition at all** — Assay offers to fetch an offline recogniser the first time you ask. It's about 45 MB, served from `assay.projectnothing.ai/voice/`, kept in the browser's cache, and after that dictation needs no network whatsoever. English today; the model is chosen by the primary language subtag, so `en-GB` and `en-AU` reach the same one.
+- **Everywhere else — including Firefox, which has no speech recognition at all** — the **extension** carries an offline recogniser. It is packaged but inert: 5.8 MB that is never loaded on a page until you press Dictate, so it costs nothing if you never dictate. The ~40 MB language model is still fetched once, on request, from `assay.projectnothing.ai/voice/` and kept in the browser's cache; after that dictation needs no network whatsoever. English today, chosen by the primary language subtag, so `en-GB` and `en-AU` reach the same model.
 
-The second route runs code that was fetched rather than shipped, which the **extension** builds are not allowed to do (Manifest V3 forbids it, rightly). So in the Chrome/Edge/Firefox *extension* you get the first route or an explanation; in the **userscript** you get both. On Firefox for Android the userscript is the one that can dictate.
+  The engine is packaged rather than fetched because a chat page's own `connect-src` policy will not let a script running inside it fetch one — that is what defeated the download route on both chatgpt.com and github.com. A content script is not bound by the page's policy, which is why the extension can do this and the **userscript cannot**: there, voice is whatever the browser itself offers.
+
+Both routes are code the extension shipped — Manifest V3 forbids running anything else, rightly, and `extension/VOSK-SOURCE.md` records exactly what that file is and how to verify it against the registry.
 
 **Does it auto-send anything?**
 Never. ↗ To composer only fills the message box.
