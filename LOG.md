@@ -372,3 +372,21 @@ Append only. Never edit an entry after the fact.
   Access-Control-Allow-Origin or the browser refuses before it starts; and the
   artifacts are staged by `npm run fetch-voice` into a gitignored site/voice/,
   because 46MB does not belong in a repository any more than in a package.
+- **2026-09-13** — the voice artifacts had nowhere to go. site/ is its own Vercel
+  project deployed from this repository, so putting site/voice/ in .gitignore
+  meant Vercel would never see the files and every fetch would have been a 404 —
+  a gap I made and did not notice, because "hosted at assay.projectnothing.ai"
+  was an assumption rather than a thing I had checked. The site has a build
+  command now (`node fetch-voice.js`, which moved into site/), so the artifacts
+  are staged at deploy time and still never committed; the fetch is deliberately
+  non-fatal, because a CDN hiccup must not take the site down.
+  GitHub Releases were the obvious alternative and are not usable: an asset URL
+  redirects to a signed, expiring S3 link and the redirect carries no
+  Access-Control-Allow-Origin, so a browser fetch fails the CORS check on the
+  hop. Worth writing down so nobody tries it again.
+  Two more that would each have been a silent 404. vercel.json sent no CORS
+  header at all, so the fetch would have been refused even with the files in
+  place — I had written the requirement into a comment and then not configured
+  it. And the model was requested by the whole locale, so a browser saying
+  en-GB asked for model-en-gb.zip; it is the primary subtag now, and one
+  English model serves every variant of it.

@@ -5,22 +5,29 @@
 // two files the first time somebody asks to dictate in a browser that cannot do
 // it on its own, and keeps them in the browser's cache from then on.
 //
-//   npm run fetch-voice
+//   npm run fetch-voice          (locally)
 //
-// The site must serve site/voice/ with `Access-Control-Allow-Origin: *`. The
-// chat page is a different origin, so without that header the browser refuses
-// the fetch before it starts.
+// It is also the site's build command, so Vercel stages these at deploy time
+// and nothing large is ever committed. vercel.json serves /voice/ with
+// `Access-Control-Allow-Origin: *`, which is not optional: the chat page is a
+// different origin, and without that header the browser refuses the fetch
+// before it starts.
+//
+// This must never fail the deploy. If a file cannot be fetched the site goes
+// out without it and dictation says so on the browsers that needed it — which
+// is a far better outcome than assay.projectnothing.ai being down.
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
-const OUT = path.join(__dirname, '..', 'site', 'voice');
+const OUT = path.join(__dirname, 'voice');
 const FILES = [
   { name: 'vosk.js',
     url: 'https://cdn.jsdelivr.net/npm/vosk-browser@0.0.8/dist/vosk.js',
     note: 'the recogniser (WASM, inlined)' },
-  { name: 'model-en-us.zip',
+  { name: 'model-en.zip',
     url: 'https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip',
+    // Named by the primary subtag, so en-GB and en-AU reach it too.
     note: 'the small English model' }
 ];
 
@@ -61,9 +68,9 @@ fs.mkdirSync(OUT, { recursive: true });
   process.stdout.write(f.name + ' — ' + f.note + '\n');
   get(f.url, dest, (err, bytes) => {
     if (err) {
-      console.error('\n  failed: ' + err.message + '\n  fetch it by hand from ' + f.url);
-      process.exitCode = 1;
-      return next(i + 1);
+      console.error('\n  FAILED: ' + err.message + '\n  voice will be unavailable for browsers that need it;' +
+        ' fetch it by hand from ' + f.url);
+      return next(i + 1);   // deliberately not fatal — see the note at the top
     }
     console.log('\r  ' + (bytes / 1048576).toFixed(1) + ' MB');
     next(i + 1);

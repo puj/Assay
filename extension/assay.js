@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.22.0';
+  var VERSION = '0.22.1';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2315,9 +2315,16 @@
         } catch (e) { return cb(false, 'The recogniser could not be started.'); }
         if (!window.Vosk || !window.Vosk.createModel) return cb(false, 'The recogniser did not load.');
         onProgress(0.2, 'Fetching the language model…');
-        var modelUrl = voiceBase() + 'model-' + voiceLang().toLowerCase() + '.zip';
+        // The primary subtag, not the whole locale: there is one English model,
+        // and asking for model-en-gb.zip because that is how the browser spells
+        // the language would be a 404 for most of the people who speak it.
+        var base = voiceLang().split('-')[0].toLowerCase();
+        var modelUrl = voiceBase() + 'model-' + base + '.zip';
         cachedFetch(modelUrl, function (f) { onProgress(0.2 + f * 0.8, 'Fetching the language model…'); }, function (mblob) {
-          if (!mblob) return cb(false, 'The language model could not be fetched.');
+          if (!mblob) {
+            return cb(false, 'There is no offline model for ' + base + ' yet. ' +
+              'English is the one that is there today.');
+          }
           var u = URL.createObjectURL(mblob);
           window.Vosk.createModel(u).then(function (m) {
             wasmModel = m;
