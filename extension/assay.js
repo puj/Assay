@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.23.3';
+  var VERSION = '0.24.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -255,10 +255,9 @@
     '.pad header h2{margin:0;font-size:17px;font-weight:700}' +
     '.pad header .close{font-size:22px;line-height:1;padding:4px 10px;color:#64748b}' +
     '.padwrap{flex:1;overflow-y:auto;padding:4px 16px 8px;-webkit-overflow-scrolling:touch}' +
-    '.padtext{font-size:17px;line-height:1.55;white-space:pre-wrap;word-wrap:break-word;min-height:100%}' +
-    '.padtext p{margin:0 0 14px}' +
-    '.padtext .sel{background:rgba(56,189,248,.34);border-radius:3px}' +
-    '.padtext .empty{color:#94a3b8}' +
+    '.padtext{display:block;width:100%;min-height:100%;border:0;outline:none;resize:none;background:transparent;' +
+      'color:inherit;font:inherit;font-size:17px;line-height:1.55;padding:0}' +
+    '.padtext::placeholder{color:#94a3b8}' +
     '.padbar{display:none;gap:8px;padding:0 14px 8px}' +
     '.padbar.show{display:flex}' +
     '.padask{display:none;align-items:center;gap:8px;margin:0 16px 10px;padding:9px 11px;border-radius:10px;' +
@@ -288,7 +287,7 @@
       '.btn.warn{border-color:#a16207;color:#fbbf24}' +
       '.strip.ask{background:#3a2c07;color:#fde68a;border-color:#854d0e}' +
       '.pad{background:#0b1220;color:#e2e8f0}' +
-      '.padtext .empty{color:#64748b}' +
+      '.padtext::placeholder{color:#64748b}' +
       '.mic{background:#334155;color:#e2e8f0}' +
       '.rec{background:#1e293b}' +
       '.padask{background:#3a2c07;color:#fde68a;border-color:#854d0e}' +
@@ -376,15 +375,16 @@
     '</div>' +
     '<div class="pad" id="pad">' +
       '<header><h2>Voice scratchpad</h2><button class="close" id="padClose">&#x2715;</button></header>' +
-      '<div class="padwrap"><div class="padtext" id="padText"></div></div>' +
+      '<div class="padwrap"><textarea class="padtext" id="padText" ' +
+        'placeholder="Talk or type. Your keyboard\u2019s microphone works here too. ' +
+        'Tap a word to select it, tap again for the sentence."></textarea></div>' +
       '<div class="padbar" id="padBar">' +
         '<button class="btn minor" id="padReword">&#x1F3A4; Say it again</button>' +
         '<button class="btn minor" id="padCut">Delete</button>' +
         '<button class="btn minor" id="padPick">&#xFF0B; Collect</button>' +
       '</div>' +
       '<div class="padask" id="padAsk"><span id="padAskMsg"></span>' +
-        '<button class="btn minor" id="padAskNo">Not now</button>' +
-        '<button class="btn warn" id="padAskYes">Download</button></div>' +
+        '<button class="btn minor" id="padAskNo">OK</button></div>' +
       '<div class="padfoot">' +
         '<button class="rec" id="padRec"><span class="dot"></span><span id="padRecLabel">Dictate</span></button>' +
       '</div>' +
@@ -2190,42 +2190,49 @@
   }
 
   // --------------------------------------------------------------- voice
-  // Dictation, on the device or not at all.
+  // Bring your own.
   //
-  // The browser will happily do speech recognition by sending your microphone
-  // to a server, and it is the default. Assay's whole claim is that nothing it
-  // reads leaves the machine, so the server path is not a fallback here — it is
-  // simply not used. Before listening starts, the browser is asked whether it
-  // can recognise this language locally; if it says it could with a language
-  // pack, you are asked whether to fetch one; if it says it cannot, you are
-  // told that, rather than quietly dictating into somebody's datacentre.
+  // Assay shipped a recogniser for a while, and then fetched one, and neither
+  // survived contact with a chat page: the page decides whether a script inside
+  // it may reach another origin, and whether it may start the background worker
+  // an offline recogniser runs in. Both answers are no, and nothing on our side
+  // changes either. Packaging it also meant six megabytes in the extension and
+  // a slower review in every store, for a feature that then did not work.
+  //
+  // So dictation here is whatever you already have. If the browser can
+  // recognise speech on the device — Chrome and Edge can — the mic buttons use
+  // it, and no language pack is ever downloaded: if one is missing, that is a
+  // no rather than a prompt. Everywhere else, including Firefox, the scratchpad
+  // is a plain text field and your keyboard's own dictation types into it,
+  // which is the same words by a shorter road. Everything else the scratchpad
+  // does — selecting, rewording, collecting, putting it in the message box —
+  // never needed a recogniser at all.
+  // Still worth knowing which of the two Assay is, because it is the first
+  // question any report about this raises — it just no longer changes what
+  // dictation does.
+  var IN_EXTENSION = (function () {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) return true;
+      if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.id) return true;
+    } catch (e) {}
+    return false;
+  })();
   var VOICE_KEY = 'assay.voice.v1';
   function voiceCtor() { return window.SpeechRecognition || window.webkitSpeechRecognition; }
   function voiceLang() {
     return loadJSON(VOICE_KEY, {}).lang || (navigator.language || 'en-US');
   }
-  // 'nosupport'  — no speech recognition at all (Firefox, today, everywhere)
-  // 'nolocal'    — speech recognition, but no way to demand it stays local
-  // 'unavailable'| 'downloadable' | 'downloading' | 'available'
+  // Only ever 'available' or not. There is no downloading state to wait on
+  // because nothing is ever asked to download.
   function voiceStatus(cb) {
     var C = voiceCtor();
     if (!C) return cb('nosupport');
     if (!C.available) return cb('nolocal');
-    var opts = { langs: [voiceLang()], processLocally: true };
     try {
-      var r = C.available(opts);
+      var r = C.available({ langs: [voiceLang()], processLocally: true });
       if (r && r.then) r.then(function (v) { cb(v || 'unavailable'); }, function () { cb('unavailable'); });
       else cb(r || 'unavailable');
     } catch (e) { cb('unavailable'); }
-  }
-  function voiceInstall(cb) {
-    var C = voiceCtor();
-    if (!C || !C.install) return cb(false);
-    try {
-      var r = C.install({ langs: [voiceLang()], processLocally: true });
-      if (r && r.then) r.then(function (v) { cb(v !== false); }, function () { cb(false); });
-      else cb(!!r);
-    } catch (e) { cb(false); }
   }
   function voiceErrorText(code) {
     if (code === 'not-allowed' || code === 'service-not-allowed') {
@@ -2238,403 +2245,15 @@
     return 'Dictation stopped.';
   }
 
-  // ---- the second engine: a recogniser fetched and kept, for browsers with
-  // none of their own.
-  //
-  // Firefox has no speech recognition at all, and Firefox on Android is where
-  // this is used, so "the browser cannot" had to stop being the end of it. An
-  // offline recogniser is about 6MB of engine and 40MB of language model; that
-  // is what offline speech costs, and it is why it is fetched the first time
-  // you ask for it rather than shipped to everybody who installs Assay.
-  //
-  // It is offered only where fetched code may actually run. An extension may
-  // not (MV3 forbids running code it did not ship, and rightly), so there the
-  // browser's own recogniser is the only path — which on Chrome and Edge is
-  // already an on-device one.
-  var IN_EXTENSION = (function () {
-    try {
-      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) return true;
-      if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.id) return true;
-    } catch (e) {}
-    return false;
-  })();
-  var VOICE_BASE = 'https://assay.projectnothing.ai/voice/';
-  function voiceBase() { return loadJSON(VOICE_KEY, {}).base || VOICE_BASE; }
-  var WASM_CACHE = 'assay-voice-v1';
-  var wasmModel = null, wasmCtx = null, wasmNode = null, wasmStream = null;
-
-  // The engine is either already here — packaged with the extension, which is
-  // the only way an extension may have it — or it is something a userscript can
-  // go and fetch. Where it comes from changes nothing after this line.
-  //
-  // It is found by looking in three places because a content script's globals
-  // are not the page's: the bundle assigns to `globalThis`, which in an
-  // extension is the content script's own scope and not `window` at all.
-  function voskLib() {
-    try {
-      if (typeof Vosk !== 'undefined' && Vosk && Vosk.createModel) return Vosk;
-    } catch (e) {}
-    try {
-      if (typeof globalThis !== 'undefined' && globalThis.Vosk && globalThis.Vosk.createModel) return globalThis.Vosk;
-    } catch (e) {}
-    if (window.Vosk && window.Vosk.createModel) return window.Vosk;
-    return null;
-  }
-  // Where the packaged engine lives, if this build has one. It is deliberately
-  // not a content script: 5.8MB parsed on every chat page you open, forever,
-  // for a feature most people never touch, is exactly the cost this thing spent
-  // four versions learning not to impose. It is packaged but inert, and loaded
-  // the first time somebody presses Dictate.
-  function packagedEngineUrl() {
-    try {
-      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
-        return chrome.runtime.getURL('vosk.js');
-      }
-      if (typeof browser !== 'undefined' && browser.runtime && browser.runtime.getURL) {
-        return browser.runtime.getURL('vosk.js');
-      }
-    } catch (e) {}
-    return '';
-  }
-  // The userscript manager's own fetch, when the script was granted it. It runs
-  // in the manager's context rather than the page's, so the page's connect-src
-  // has no say — which is the only reason dictation can work in a userscript at
-  // all. `@connect` in the header names the one host it may reach.
-  function gmFetch() {
-    try {
-      if (typeof GM_xmlhttpRequest === 'function') return GM_xmlhttpRequest;
-      if (typeof GM !== 'undefined' && GM && typeof GM.xmlHttpRequest === 'function') return GM.xmlHttpRequest;
-    } catch (e) {}
-    return null;
-  }
-  function gmResource(name) {
-    try {
-      if (typeof GM_getResourceText === 'function') return GM_getResourceText(name);
-    } catch (e) {}
-    return '';
-  }
-  function gmGetBlob(url, onProgress, cb) {
-    var xhr = gmFetch();
-    if (!xhr) return cb(null, 'no manager fetch');
-    try {
-      xhr({
-        method: 'GET', url: url, responseType: 'blob',
-        onprogress: function (e) {
-          if (e && e.lengthComputable && e.total) onProgress(e.loaded / e.total);
-        },
-        onload: function (res) {
-          if (res.status === 404) return cb(null, url.replace(/^.*\//, '') + ' is not on the server (404).');
-          if (res.status < 200 || res.status >= 300) return cb(null, 'The server answered ' + res.status + '.');
-          var b = res.response;
-          if (!b) return cb(null, 'The download came back empty.');
-          cb(b);
-        },
-        onerror: function () { cb(null, 'The download failed.'); },
-        ontimeout: function () { cb(null, 'The download timed out.'); }
-      });
-    } catch (e) { cb(null, (e && e.message) || 'The download could not be started.'); }
-  }
-
-  // Starting the engine, by whichever route this browser will allow.
-  //
-  // There are three, because no single one works everywhere. Compiling the
-  // resource is the direct route and the one Firefox is most likely to refuse:
-  // a userscript sandbox there can still be held to the page's script-src, so
-  // `new Function` throws on a strict site however privileged the manager is.
-  // Importing the resource by URL goes around that, since the manager hands
-  // back an extension-origin or blob URL rather than source. And a packaged
-  // file is what an extension has instead of either.
-  //
-  // Each is tried, and what each one said is kept — "would not start" told
-  // nobody anything, which is how this reached a phone in the first place.
-  function loadPackagedEngine(cb) {
-    if (voskLib()) return cb(true);
-    var tried = [];
-    var give = function (ok) { cb(ok, tried.join('; ')); };
-
-    var src = '';
-    try { src = gmResource('vosk'); } catch (e) { tried.push('reading the resource threw (' + (e && e.message) + ')'); }
-    if (src) {
-      try {
-        (new Function('module', 'exports', 'define', src))(undefined, undefined, undefined);
-        if (voskLib()) return give(true);
-        tried.push('the resource ran but defined nothing');
-      } catch (e) {
-        tried.push('this page will not let the script compile it (' + ((e && e.message) || 'refused') + ')');
-      }
-    } else if (!tried.length) {
-      tried.push('the manager has no vosk resource — the script may need reinstalling so it fetches one');
-    }
-
-    var url = '';
-    try {
-      if (typeof GM_getResourceURL === 'function') url = GM_getResourceURL('vosk');
-    } catch (e) {}
-    if (!url) url = packagedEngineUrl();
-    if (!url) return give(false);
-    try {
-      import(/* webpackIgnore: true */ url).then(function () {
-        if (voskLib()) return give(true);
-        tried.push('importing it defined nothing');
-        give(false);
-      }, function (e) {
-        tried.push('importing it failed (' + ((e && e.message) || 'refused') + ')');
-        give(false);
-      });
-    } catch (e) {
-      tried.push('importing it threw (' + ((e && e.message) || 'refused') + ')');
-      give(false);
-    }
-  }
-  function wasmPossible() {
-    if (!(window.AudioContext || window.webkitAudioContext)) return false;
-    if (voskLib() || packagedEngineUrl() || gmFetch()) return true;
-    return !IN_EXTENSION;
-  }
-  function wasmReady() { return !!wasmModel; }
-
-  // Fetched once, then kept in the browser's cache, so the second time you
-  // dictate nothing is downloaded and nothing needs a network.
-  // `cb(blob)` on success, `cb(null, why)` on failure — and `why` is the point.
-  // "The recogniser could not be fetched" is at least three different problems
-  // wearing the same coat: the file is not on the server, the server will not
-  // let this page read it, or the page refused to make the request at all. They
-  // have different fixes and only one of them is mine, so they are told apart.
-  function cachedFetch(url, onProgress, cb) {
-    var useCache = typeof caches !== 'undefined';
-    var name = url.replace(/^.*\//, '');
-    var go = function (fromCache) {
-      if (fromCache) return cb(fromCache);
-      if (gmFetch()) {
-        // The manager's own request, which the page has no say over. Same
-        // caching afterwards, so this happens once either way.
-        return gmGetBlob(url, onProgress, function (blob, why) {
-          if (!blob) return cb(null, why);
-          if (useCache) {
-            try { caches.open(WASM_CACHE).then(function (c) { c.put(url, new Response(blob.slice())); }); } catch (e) {}
-          }
-          cb(blob);
-        });
-      }
-      var reached = false;
-      fetch(url).then(function (res) {
-        reached = true;
-        if (res.status === 404) throw new Error(name + ' is not on the server (404). It has not been deployed yet.');
-        if (!res.ok) throw new Error(name + ' came back ' + res.status + ' from the server.');
-        var total = +(res.headers.get('content-length') || 0);
-        if (!res.body || !res.body.getReader || !total) return res.blob();
-        var reader = res.body.getReader(), got = 0, chunks = [];
-        return (function pump() {
-          return reader.read().then(function (r) {
-            if (r.done) return new Blob(chunks);
-            chunks.push(r.value);
-            got += r.value.length;
-            onProgress(got / total);
-            return pump();
-          });
-        })();
-      }).then(function (blob) {
-        if (useCache) {
-          try {
-            caches.open(WASM_CACHE).then(function (c) { c.put(url, new Response(blob.slice())); });
-          } catch (e) {}
-        }
-        cb(blob);
-      }, function (err) {
-        if (reached) return cb(null, (err && err.message) || ('Could not read ' + name + '.'));
-        // A fetch that never came back is two quite different problems, and
-        // guessing between them wasted a round trip. A no-cors request settles
-        // it: the browser will make it if the page's policy allows requests to
-        // this host at all, and refuse it if not. So if this one goes through,
-        // the page was fine with the request and the server would not let us
-        // read the answer; if it does not, the page stopped it.
-        var where = location.hostname;
-        fetch(url, { mode: 'no-cors' }).then(function () {
-          cb(null, name + ' is on the server, but it came back without the header that lets ' + where +
-            ' read it. The site needs to serve /voice/ with Access-Control-Allow-Origin: *.');
-        }, function () {
-          cb(null, where + ' does not allow Assay to fetch ' + name + ' at all — that is the page\'s own ' +
-            'connect-src policy, not the server. Running as ' + (IN_EXTENSION ? 'an extension' : 'a userscript') + '.');
-        });
-      });
-    };
-    if (!useCache) return go(null);
-    caches.open(WASM_CACHE).then(function (c) {
-      c.match(url).then(function (res) {
-        if (!res) return go(null);
-        res.blob().then(function (b) { go(b); }, function () { go(null); });
-      }, function () { go(null); });
-    }, function () { go(null); });
-  }
-
-  function wasmInstall(onProgress, cb) {
-    if (wasmReady()) return cb(true);
-    // Packaged — by the extension, or by the userscript manager as a resource.
-    var isVoiceScript = false;
-    try { isVoiceScript = (typeof GM_getResourceText === 'function'); } catch (e) {}
-    if (voskLib() || packagedEngineUrl() || isVoiceScript) {
-      onProgress(0, 'Starting the recogniser…');
-      return loadPackagedEngine(function (ok, why) {
-        if (!ok) return cb(false, 'The recogniser would not start: ' + (why || 'no reason given') + '.');
-        withEngine(onProgress, cb);
-      });
-    }
-    onProgress(0, 'Fetching the recogniser…');
-    cachedFetch(voiceBase() + 'vosk.js', function (f) { onProgress(f * 0.2, 'Fetching the recogniser…'); }, function (blob, why) {
-      if (!blob) return cb(false, why || 'The recogniser could not be fetched.');
-      blob.text().then(function (src) {
-        try {
-          if (!voskLib()) {
-            // The recogniser ships as a UMD bundle, which picks CommonJS if the
-            // page happens to have `module`/`exports` defined — plenty of pages
-            // do — and then sets nothing on window. Shadowing all three names
-            // makes it take the browser-global branch every time.
-            var run = new Function('module', 'exports', 'define', src);
-            run(undefined, undefined, undefined);   // page context only; never in an extension
-          }
-        } catch (e) { return cb(false, 'The recogniser could not be started: ' + (e && e.message)); }
-        if (!voskLib()) return cb(false, 'The recogniser did not load.');
-        withEngine(onProgress, cb);
-      }, function () { cb(false, 'The recogniser could not be read.'); });
-    });
-  }
-
-  // Everything from "we have an engine" onwards, which is the same whether it
-  // was packaged or fetched.
-  function withEngine(onProgress, cb) {
-        onProgress(0.2, 'Fetching the language model…');
-        // The primary subtag, not the whole locale: there is one English model,
-        // and asking for model-en-gb.zip because that is how the browser spells
-        // the language would be a 404 for most of the people who speak it.
-        var base = voiceLang().split('-')[0].toLowerCase();
-        // model-en.zip is the name to deploy under, since one English model
-        // serves en-GB and en-AU as well. But a model already sitting on the
-        // server under the browser's full locale is a perfectly good model, and
-        // making somebody re-upload 40MB over a filename would be absurd.
-        var names = ['model-' + base + '.zip'];
-        var full = voiceLang().toLowerCase();
-        if (full !== base) names.push('model-' + full + '.zip');
-        var tryModel = function (i, firstWhy) {
-          if (i >= names.length) {
-            return cb(false, /404/.test(firstWhy || '')
-              ? ('There is no offline model for ' + base + ' on the server yet — it looked for ' +
-                 names.join(' and ') + '.')
-              : (firstWhy || 'The language model could not be fetched.'));
-          }
-          var url = voiceBase() + names[i];
-          var onto = function (f) { onProgress(0.2 + f * 0.8, 'Fetching the language model…'); };
-          var landed = function (mblob, why) {
-            if (!mblob) return tryModel(i + 1, firstWhy || why);
-            gotModel(mblob);
-          };
-          // The manager's fetch first where there is one: the page cannot
-          // refuse it, and on a chat page the page is what refuses.
-          if (gmFetch()) gmGetBlob(url, onto, landed);
-          else cachedFetch(url, onto, landed);
-        };
-        var gotModel = function (mblob) {
-          if (!workerAllowed()) {
-            return cb(false, location.hostname + ' does not allow this page to start a background worker, ' +
-              'and the recogniser runs in one. Nothing Assay or the server can do reaches that — it is the ' +
-              'page\'s own worker-src policy.' + (IN_EXTENSION ? '' : ' The extension is not bound by it.'));
-          }
-          var u = URL.createObjectURL(mblob);
-          var settled = false;
-          // Even allowed, it can start and never become ready. A promise that
-          // never settles must not be the end of the story.
-          var timer = setTimeout(function () {
-            if (settled) return;
-            settled = true;
-            cb(false, 'The recogniser started but never became ready. It may be too large for this device.');
-          }, 120000);
-          voskLib().createModel(u).then(function (m) {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            wasmModel = m;
-            try { URL.revokeObjectURL(u); } catch (e) {}
-            cb(true);
-          }, function (e) {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            cb(false, 'The language model could not be opened: ' + ((e && e.message) || 'unreadable') + '.');
-          });
-        };
-        tryModel(0, '');
-  }
-
-  // The recogniser does its work in a Web Worker, and it builds that worker
-  // from a blob: URL. A page's own CSP decides whether that is allowed, and a
-  // chat page's generally does not allow it — so the worker is never created,
-  // nothing throws where we can see it, and the promise that was going to give
-  // us a model simply never settles. That looked like "Fetching the language
-  // model… 100%" forever, which is the worst kind of failure: the one that
-  // reports success right up until it stops existing.
-  //
-  // So it is asked first, with a worker of our own that does nothing.
-  function workerAllowed() {
-    var u = '';
-    try {
-      u = URL.createObjectURL(new Blob(['self.close()'], { type: 'application/javascript' }));
-      var w = new Worker(u);
-      w.terminate();
-      return true;
-    } catch (e) {
-      return false;
-    } finally {
-      try { if (u) URL.revokeObjectURL(u); } catch (e) {}
-    }
-  }
-
-  function wasmStart(h) {
-    if (!wasmReady()) { h.error('The recogniser is not ready.'); return; }
-    var Ctx = window.AudioContext || window.webkitAudioContext;
-    navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 }
-    }).then(function (stream) {
-      wasmStream = stream;
-      wasmCtx = new Ctx();
-      var r = new wasmModel.KaldiRecognizer(wasmCtx.sampleRate);
-      r.on('partialresult', function (m) { h.interim((m && m.result && m.result.partial) || ''); });
-      r.on('result', function (m) {
-        var t = (m && m.result && m.result.text) || '';
-        if (t) { h.final(t); h.interim(''); }
-      });
-      wasmNode = wasmCtx.createScriptProcessor(4096, 1, 1);
-      wasmNode.onaudioprocess = function (ev) {
-        try { r.acceptWaveform(ev.inputBuffer); } catch (e) {}
-      };
-      var src = wasmCtx.createMediaStreamSource(stream);
-      src.connect(wasmNode);
-      wasmNode.connect(wasmCtx.destination);
-      recOn = true;
-    }, function () { h.error(voiceErrorText('not-allowed')); });
-  }
-  function wasmStop() {
-    try { if (wasmNode) { wasmNode.onaudioprocess = null; wasmNode.disconnect(); } } catch (e) {}
-    try { if (wasmCtx) wasmCtx.close(); } catch (e) {}
-    try {
-      if (wasmStream) wasmStream.getTracks().forEach(function (t) { t.stop(); });
-    } catch (e) {}
-    wasmNode = null; wasmCtx = null; wasmStream = null;
-  }
-
-  var rec = null, recOn = false, usingWasm = false;
+  var rec = null, recOn = false;
   function listening() { return recOn; }
   function stopListening() {
     recOn = false;
-    if (usingWasm) { usingWasm = false; wasmStop(); return; }
     if (!rec) return;
     try { rec.onend = null; rec.onresult = null; rec.onerror = null; rec.stop(); } catch (e) {}
     rec = null;
   }
   function startListening(h) {
-    if (wasmReady()) {
-      stopListening();
-      usingWasm = true;
-      return wasmStart(h);
-    }
     var C = voiceCtor();
     if (!C) { h.error('This browser cannot do speech recognition.'); return; }
     stopListening();
@@ -2642,7 +2261,7 @@
     rec.lang = voiceLang();
     rec.continuous = true;
     rec.interimResults = true;
-    // The point of the whole exercise.
+    // Never quietly send a microphone to a server.
     try { rec.processLocally = true; } catch (e) {}
     rec.onresult = function (e) {
       var interim = '', fin = '';
@@ -2655,45 +2274,32 @@
       h.interim(interim);
     };
     rec.onerror = function (e) {
-      var code = e && e.error;
       recOn = false;
-      h.error(voiceErrorText(code));
+      h.error(voiceErrorText(e && e.error));
     };
     rec.onend = function () { recOn = false; if (h.end) h.end(); };
     recOn = true;
     try { rec.start(); } catch (e) { recOn = false; h.error('Could not start listening.'); }
   }
 
-  // Everything above is only reached through here, so there is exactly one
-  // place that decides whether dictating is allowed to begin.
-  // `offer` is what pressing Download would actually do: 'pack' for the
-  // browser's own language pack, 'engine' for the recogniser we fetch
-  // ourselves, or false when there is nothing to offer and saying so is the
-  // whole of the answer.
+  // The one place that decides whether the mic button does anything. A refusal
+  // is final and says what to do instead — there is nothing to offer to fetch.
+  var KEYBOARD_HINT = ' Your keyboard\'s own dictation types into the scratchpad, which works everywhere.';
   function withVoice(onReady, onRefuse) {
-    if (wasmReady()) return onReady();
     voiceStatus(function (st) {
       if (st === 'available') return onReady();
-      if (st === 'downloading') return onRefuse('The language pack is still downloading. Try again in a moment.', false);
-      if (st === 'downloadable') return onRefuse('', 'pack');
-      if (wasmPossible() && !workerAllowed()) {
-        return onRefuse(location.hostname + ' does not allow this page to start a background worker, and the ' +
-          'offline recogniser runs in one — so it cannot work here however it is installed. ' +
-          'That is the page\'s own policy.' + (IN_EXTENSION ? '' : ' The extension is not bound by it.'), false);
-      }
-      if (wasmPossible()) {
-        return onRefuse(st === 'nolocal'
-          ? 'This browser can only recognise speech by sending it to a server, so Assay will not use it. It can fetch a recogniser that runs here instead.'
-          : 'This browser has no speech recognition of its own. Assay can fetch one that runs on this device.', 'engine');
-      }
       if (st === 'nosupport') {
-        return onRefuse('This browser has no speech recognition, and none is packaged with this build. ' +
-          'Use Chrome or Edge, which have one of their own.', false);
+        return onRefuse('This browser has no speech recognition of its own.' + KEYBOARD_HINT, false);
       }
       if (st === 'nolocal') {
-        return onRefuse('This browser can only recognise speech by sending it to a server, so Assay will not use it.', false);
+        return onRefuse('This browser can only recognise speech by sending it to a server, so Assay will not use it.' +
+          KEYBOARD_HINT, false);
       }
-      onRefuse('Speech recognition is not available on this device for ' + voiceLang() + '.', false);
+      if (st === 'downloadable' || st === 'downloading') {
+        return onRefuse('This browser could recognise ' + voiceLang() + ' on the device, but the language pack is ' +
+          'not installed and Assay does not download things.' + KEYBOARD_HINT, false);
+      }
+      onRefuse('Speech recognition is not available on this device for ' + voiceLang() + '.' + KEYBOARD_HINT, false);
     });
   }
 
@@ -3167,9 +2773,7 @@
       var f = window.__assay._find();
       lines.push('running as: ' + f.runtime);
       lines.push('voice: recogniser=' + f.voice.ctor + ' onDeviceApi=' + f.voice.onDeviceApi +
-        ' lang=' + f.voice.lang + ' canFetchEngine=' + f.voice.canFetchEngine +
-        ' engineLoaded=' + f.voice.engineLoaded);
-      lines.push('voice base: ' + f.voice.base);
+        ' lang=' + f.voice.lang);
       f.strategies.forEach(function (st, i) { lines.push('finder ' + (i + 1) + ': ' + st.n + '  ' + st.sel.slice(0, 60)); });
       lines.push('by shape: ' + f.structural + ' | used: ' + f.found + ' | roles: ' + (f.roles || []).join(','));
       if (f.sample && f.sample.length) lines.push('page shape: ' + f.sample.join('  '));
@@ -3299,73 +2903,26 @@
   var PAD_KEY = 'assay.scratch.v1';
   var padBody = loadJSON(PAD_KEY, {}).text || '';
   var padSel = null;          // {start, end, scope} over padBody
-  var padBlocks = null;
   var voiceTarget = null;     // 'note' | 'pad' | 'padReplace'
   var noteBase = '';          // what the note held before this dictation began
 
   function savePad() { saveMap(PAD_KEY, { text: padBody, ts: Date.now() }); }
 
-  // Two panels in one: an offer, and a plain no. A no that still shows a
-  // Download button is a lie about what pressing it would do.
-  function padAsk(msg, offer) {
-    $('padAskMsg').textContent = msg ||
-      ('Dictation runs on this device. The language pack for ' + voiceLang() +
-       ' has to be fetched once by the browser — not by Assay, and not from us. ' +
-       'After that it works with no network at all.');
-    $('padAskYes').style.display = offer ? '' : 'none';
-    $('padAskNo').textContent = offer ? 'Not now' : 'OK';
+  function padAsk(msg) {
+    $('padAskMsg').textContent = msg;
     $('padAsk').classList.add('show');
   }
   function padAskHide() { $('padAsk').classList.remove('show'); }
 
-  // The only way dictation starts. Refusals are explained where they happen.
+  // The only way dictation starts, and the only place a refusal is explained.
+  // There is nothing to offer to install, so a no is a no.
   function dictate(target) {
-    withVoice(function () { beginDictation(target); }, function (msg, offer) {
-      if (offer) {
-        pendingTarget = target;
-        pendingOffer = offer;
-        if (!pad.classList.contains('show')) openPad();
-        padAsk(offer === 'engine'
-          ? (msg + ' It is about 45MB, fetched once and kept, and then it needs no network at all.')
-          : '', true);
-        return;
-      }
+    withVoice(function () { beginDictation(target); }, function (msg) {
       if (pad.classList.contains('show')) padAsk(msg, false);
-      else toast(msg, 4000);
+      else toast(msg, 5000);
     });
   }
-  var pendingTarget = null, pendingOffer = null;
-  $('padAskNo').addEventListener('click', function () {
-    padAskHide();
-    pendingTarget = null;
-    pendingOffer = null;
-  });
-  $('padAskYes').addEventListener('click', function () {
-    var offer = pendingOffer;
-    $('padAskYes').style.display = 'none';
-    $('padAskNo').textContent = 'Cancel';
-    var done = function (ok, why) {
-      if (!ok) {
-        padAsk(why || 'That could not be fetched.', false);
-        pendingOffer = null;
-        return;
-      }
-      padAskHide();
-      var t = pendingTarget || 'pad';
-      pendingTarget = null;
-      pendingOffer = null;
-      dictate(t);
-    };
-    if (offer === 'engine') {
-      $('padAskMsg').textContent = 'Fetching the recogniser…';
-      wasmInstall(function (frac, label) {
-        $('padAskMsg').textContent = label + '  ' + Math.round((frac || 0) * 100) + '%';
-      }, done);
-      return;
-    }
-    $('padAskMsg').textContent = 'Fetching the language pack…';
-    voiceInstall(function (ok) { done(ok, 'The language pack could not be fetched.'); });
-  });
+  $('padAskNo').addEventListener('click', padAskHide);
 
   function paintDictating(on) {
     $('noteMic').classList.toggle('on', on && voiceTarget === 'note');
@@ -3442,107 +2999,85 @@
   // ---- the scratchpad
   // Rendered from the string every time, so an offset means the same thing
   // before and after a selection is painted into it.
+  // The scratchpad is a text field, not a rendering of one. That is the whole
+  // point of bringing your own voice: the keyboard's microphone types here like
+  // any other keyboard, and so does your thumb. Everything Assay adds sits on
+  // top of an ordinary textarea rather than replacing it.
   function renderPad(interim) {
-    padTextEl.textContent = '';
-    var text = padBody;
-    if (!text && !interim) {
-      var e = document.createElement('p');
-      e.className = 'empty';
-      e.textContent = 'Nothing yet. Press Dictate and talk — the words land here, and you can tap one to change it.';
-      padTextEl.appendChild(e);
-      padBlocks = null;
-      paintPadBar();
-      return;
-    }
-    var paras = text.split(/\n{2,}/);
-    var at = 0;
-    paras.forEach(function (para, i) {
-      var p = document.createElement('p');
-      var start = at, end = at + para.length;
-      if (padSel && padSel.start < end && padSel.end > start) {
-        var a = Math.max(padSel.start, start) - start, b = Math.min(padSel.end, end) - start;
-        if (a > 0) p.appendChild(document.createTextNode(para.slice(0, a)));
-        var sp = document.createElement('span');
-        sp.className = 'sel';
-        sp.textContent = para.slice(a, b);
-        p.appendChild(sp);
-        if (b < para.length) p.appendChild(document.createTextNode(para.slice(b)));
-      } else {
-        p.textContent = para;
-      }
-      padTextEl.appendChild(p);
-      at = end + 2;
-    });
-    if (interim) {
-      var live = document.createElement('p');
-      var sp2 = document.createElement('span');
-      sp2.className = 'interim';
-      sp2.textContent = interim;
-      live.appendChild(sp2);
-      padTextEl.appendChild(live);
-      padTextEl.parentNode.scrollTop = padTextEl.parentNode.scrollHeight;
-    }
-    padBlocks = buildBlocks(padTextEl);
+    var text = padBody + (interim ? (padBody && !/\s$/.test(padBody) ? ' ' : '') + interim : '');
+    if (padTextEl.value !== text) padTextEl.value = text;
+    if (interim) padTextEl.scrollTop = padTextEl.scrollHeight;
     paintPadBar();
   }
   function paintPadBar() {
     $('padBar').classList.toggle('show', !!padSel);
     $('padSend').innerHTML = IS_GITHUB ? '&#x29C9; Copy notes' : '&#x2197; To composer';
     $('padSend').disabled = !padBody;
+    $('padReword').style.display = voiceCtor() ? '' : 'none';
   }
+  // Typing is the source of truth; dictation is just another way of typing.
+  padTextEl.addEventListener('input', function () {
+    padBody = padTextEl.value;
+    padSel = null;
+    savePad();
+    paintPadBar();
+  });
 
-  // The same idea as the page: tap a word, tap again to widen, tap away to drop
-  // it. Here it is for changing what you said rather than collecting it.
-  // Where in the text a tap landed. The page's own caret lookup is no use
-  // here: the scratchpad lives in a shadow root, and the browser hands back the
-  // host element rather than the word. The characters are measured instead,
-  // which is affordable because this only ever runs on a tap and the scratchpad
-  // is as long as a thought, not a thread.
-  function padPointAt(e) {
-    var path = e.composedPath ? e.composedPath() : [e.target], p = null, i;
-    for (i = 0; i < path.length; i++) {
-      if (path[i].nodeType === 1 && path[i].tagName === 'P' && padTextEl.contains(path[i])) { p = path[i]; break; }
+  // The paragraph an offset falls in, as plain string bounds — there are no
+  // elements to walk inside a textarea.
+  function padPara(off) {
+    var text = padBody, from = 0, i;
+    var parts = text.split(/\n{2,}/);
+    for (i = 0; i < parts.length; i++) {
+      var end = from + parts[i].length;
+      if (off <= end || i === parts.length - 1) return { start: from, end: end, text: parts[i] };
+      from = end + 2;
     }
-    if (!p) return null;
-    var walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, null);
-    var r = document.createRange(), n, best = null, bestD = Infinity;
-    while ((n = walker.nextNode())) {
-      var v = n.nodeValue || '';
-      for (var k = 0; k < v.length; k++) {
-        try { r.setStart(n, k); r.setEnd(n, k + 1); } catch (err) { continue; }
-        var rc = r.getBoundingClientRect();
-        if (!rc.width && !rc.height) continue;
-        var dx = e.clientX < rc.left ? rc.left - e.clientX : (e.clientX > rc.right ? e.clientX - rc.right : 0);
-        var dy = e.clientY < rc.top ? rc.top - e.clientY : (e.clientY > rc.bottom ? e.clientY - rc.bottom : 0);
-        var d = dx + dy * 4;   // a miss on the wrong line is worse than a miss along one
-        if (d < bestD) { bestD = d; best = { node: n, offset: k }; if (!d) return best; }
-      }
-    }
-    return best;
+    return { start: 0, end: text.length, text: text };
   }
-  padTextEl.addEventListener('click', function (e) {
-    if (!padBody) return;
-    var pt = padPointAt(e);
-    if (!pt || !padBlocks) { padSel = null; renderPad(''); return; }
-    var off = absOffset(padBlocks, pt.node, pt.offset);
-    if (off == null) { padSel = null; renderPad(''); return; }
-    var b = blockAt(padBlocks, off);
-    if (!b) { padSel = null; renderPad(''); return; }
-    var inside = padSel && off >= padSel.start && off < padSel.end;
-    var next;
-    if (!inside) {
-      var w = wordAt(b.words, off);
-      next = w ? { start: w.start, end: w.end, scope: 'word' } : null;
-    } else if (padSel.scope === 'word') {
-      var sb = sentenceBounds(b.sentences, padSel.start, padSel.end);
-      next = sb ? { start: sb.start, end: sb.end, scope: 'sentence' } : null;
-    } else if (padSel.scope === 'sentence') {
-      next = { start: b.start, end: b.end, scope: 'paragraph' };
-    } else {
-      next = null;   // round the cycle and back to nothing
+  function padSelect(sel) {
+    padSel = sel;
+    if (sel) {
+      try {
+        padTextEl.setSelectionRange(sel.start, sel.end);
+        padTextEl.focus();
+      } catch (e) {}
     }
-    padSel = next;
-    renderPad('');
+    paintPadBar();
+  }
+  // Tap a word, tap again for the sentence, again for the paragraph, again for
+  // nothing — the same cycle as the page, driven by where the caret landed.
+  function padCycle() {
+    if (!padBody) return;
+    var a = padTextEl.selectionStart, b = padTextEl.selectionEnd;
+    if (a == null) return;
+    var inside = padSel && a >= padSel.start && b <= padSel.end && (b - a) === (padSel.end - padSel.start);
+    var para = padPara(a);
+    var rel = a - para.start;
+    if (!inside) {
+      var words = segmentWords(para.text);
+      var w = wordAt(words, rel);
+      return padSelect(w ? { start: para.start + w.start, end: para.start + w.end, scope: 'word' } : null);
+    }
+    if (padSel.scope === 'word') {
+      var sents = segmentSentences(para.text);
+      var sb = sentenceBounds(sents, padSel.start - para.start, padSel.end - para.start);
+      return padSelect(sb ? { start: para.start + sb.start, end: para.start + sb.end, scope: 'sentence' } : null);
+    }
+    if (padSel.scope === 'sentence') {
+      return padSelect({ start: para.start, end: para.end, scope: 'paragraph' });
+    }
+    padSelect(null);
+  }
+  padTextEl.addEventListener('click', function () { setTimeout(padCycle, 0); });
+  // A selection you dragged out yourself is a selection, and the bar should
+  // offer to do something with it.
+  padTextEl.addEventListener('select', function () {
+    var a = padTextEl.selectionStart, b = padTextEl.selectionEnd;
+    if (b > a && !(padSel && padSel.start === a && padSel.end === b)) {
+      padSel = { start: a, end: b, scope: 'word' };
+      paintPadBar();
+    }
   });
 
   $('padReword').addEventListener('click', function () {
@@ -3551,10 +3086,12 @@
   });
   $('padCut').addEventListener('click', function () {
     if (!padSel) return;
-    padBody = (padBody.slice(0, padSel.start) + padBody.slice(padSel.end)).replace(/[ \t]{2,}/g, ' ').trim();
+    var at = padSel.start;
+    padBody = (padBody.slice(0, padSel.start) + padBody.slice(padSel.end)).replace(/[ \t]{2,}/g, ' ');
     padSel = null;
     savePad();
     renderPad('');
+    try { padTextEl.setSelectionRange(at, at); padTextEl.focus(); } catch (e) {}
   });
   $('padPick').addEventListener('click', function () {
     if (!padSel) return;
@@ -3596,6 +3133,7 @@
     clearPending();
     closeSheet();
     padSel = null;
+    padBody = loadJSON(PAD_KEY, {}).text || padBody;
     pad.classList.add('show');
     padAskHide();
     paintDictating(listening());
@@ -3774,10 +3312,7 @@
         voice: {
           ctor: !!voiceCtor(),
           onDeviceApi: !!(voiceCtor() && voiceCtor().available),
-          lang: voiceLang(),
-          canFetchEngine: wasmPossible(),
-          engineLoaded: wasmReady(),
-          base: voiceBase()
+          lang: voiceLang()
         }
       };
       CHAT_FINDERS.forEach(function (f) {

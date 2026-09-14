@@ -56,14 +56,9 @@ It reads nothing on any other website, and it does not run anywhere else.
   use it and tells you so. If a language pack is needed, you are asked first and
   the **browser** fetches it — not Assay, and not from us. Audio is never
   recorded, never stored and never sent anywhere by Assay.
-- **A language model, if you ask for one.** Where the browser has no local
-  recognition of its own, the extension uses the recogniser packaged with it —
-  nothing is fetched for that — and offers to fetch the language model it needs
-  (about 40 MB) from `assay.projectnothing.ai`. You are told the size and asked
-  before anything is fetched; it is kept in the browser's cache, and from then
-  on dictation needs no network at all. That request carries nothing about you
-  but the fact that a file was asked for, and it is the only request Assay ever
-  makes.
+- **Nothing is downloaded, ever.** Assay makes no network requests at all. If
+  the browser cannot recognise speech on the device, it says so and points you
+  at your keyboard's own dictation rather than offering to fetch anything.
 - **The scratchpad you dictate into**, in local storage on the site, so it is
   still there when you come back. **Clear** empties it.
 - **The composed prompt**, into that site's own message box, when you press

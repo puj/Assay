@@ -496,3 +496,26 @@ Append only. Never edit an entry after the fact.
   content script may be; if it is, the way through is an extension-origin
   document doing the recognising and passing results back, which is a real
   piece of work and not a patch.
+- **2026-09-14** — the recogniser is gone, in both forms. Shipping one meant six
+  megabytes in the extension and a slower review in every store; fetching one
+  meant a request the page would not allow. And underneath both, the thing that
+  settled it: an offline recogniser runs in a Web Worker built from a blob: URL,
+  and a chat page's worker-src does not allow that either. Two separate page
+  policies, each independently fatal, neither reachable from our side. It was
+  never going to work on the surface it was built for.
+  What stays is everything that never needed a recogniser. The scratchpad is a
+  textarea now rather than a rendering of one, which is the whole of "bring your
+  own voice": a phone keyboard's microphone types into it like any other
+  keyboard, and so does a thumb. Tap a word, tap again for the sentence, again
+  for the paragraph — the same cycle, driven by the caret instead of by spans.
+  Reword, delete, collect, put it in the message box: all unchanged. Where the
+  browser has on-device recognition of its own, the mic buttons use it and Say
+  it again still re-dictates a selection; where it does not, that button is
+  simply not there.
+  Nothing is downloaded or installed any more, including the browser's own
+  language pack — a missing pack is now a no rather than a prompt, and the
+  answer points at the keyboard. Assay makes no network requests at all again,
+  which is the sentence the privacy note wanted back.
+  Deleted: extension/vosk.js and its source note, assay-voice.user.js, the
+  fetch-voice script, site/voice/ and the CORS rule that served it. The package
+  is 8 files and 162KB, as it was before any of this.

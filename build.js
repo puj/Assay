@@ -21,50 +21,34 @@ if (core.includes('</script')) {
   process.exit(1);
 }
 
-// Two userscripts, one core. The plain one keeps `@grant none`, which is what
-// lets it run in the page itself — every existing install stays exactly as it
-// is. The voice one asks for the three grants dictation needs and is a separate
-// install, because a grant moves the script into the manager's sandbox and that
-// is not a change to make on everybody's behalf for a feature most never use.
-const meta = (voice) => [
+const header = [
   '// ==UserScript==',
-  '// @name         Assay' + (voice ? ' + voice' : '') + ' — deep dive for AI chats',
+  '// @name         Assay — deep dive for AI chats',
   '// @namespace    https://projectnothing.ai/assay',
   '// @version      ' + version,
   '// @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.',
   '// @author       puj',
   '// @homepageURL  https://assay.projectnothing.ai',
   '// @supportURL   https://github.com/puj/Assay/issues',
-  '// @updateURL    https://assay.projectnothing.ai/assay' + (voice ? '-voice' : '') + '.user.js',
-  '// @downloadURL  https://assay.projectnothing.ai/assay' + (voice ? '-voice' : '') + '.user.js',
+  '// @updateURL    https://assay.projectnothing.ai/assay.user.js',
+  '// @downloadURL  https://assay.projectnothing.ai/assay.user.js',
   '// @icon         https://assay.projectnothing.ai/icon.png',
   '// @match        https://chatgpt.com/*',
   '// @match        https://chat.openai.com/*',
   '// @match        https://claude.ai/*',
   '// @match        https://github.com/*',
   '// @match        https://gist.github.com/*',
-].concat(voice ? [
-  // The manager fetches these, not the page — which is the whole point: a
-  // chat page's connect-src will not let a script inside it reach our host.
-  '// @resource     vosk https://assay.projectnothing.ai/voice/vosk.js',
-  '// @connect      assay.projectnothing.ai',
-  '// @grant        GM_xmlhttpRequest',
-  '// @grant        GM_getResourceText',
-  '// @grant        GM_getResourceURL',
-  '// @grant        unsafeWindow'
-] : [
-  '// @grant        none'
-]).concat([
+  // No grants. The script runs in the page, which is what keeps it a single
+  // install with no sandbox between it and the conversation it is reading.
+  '// @grant        none',
   '// @run-at       document-idle',
   '// ==/UserScript==',
   '',
   ''
-]).join('\n');
+].join('\n');
 
-const userscript = meta(false) + core;
-const voiceScript = meta(true) + core;
+const userscript = header + core;
 fs.writeFileSync(path.join(dir, 'assay.user.js'), userscript);
-fs.writeFileSync(path.join(dir, 'assay-voice.user.js'), voiceScript);
 fs.writeFileSync(path.join(dir, 'extension', 'assay.js'), core);
 
 const manifestPath = path.join(dir, 'extension', 'manifest.json');
@@ -88,7 +72,6 @@ const site = path.join(dir, 'site');
 fs.mkdirSync(site, { recursive: true });
 fs.writeFileSync(path.join(site, 'install.html'), out);
 fs.writeFileSync(path.join(site, 'assay.user.js'), userscript);
-fs.writeFileSync(path.join(site, 'assay-voice.user.js'), voiceScript);
 fs.copyFileSync(path.join(dir, 'extension', 'icons', 'icon128.png'), path.join(site, 'icon.png'));
 fs.copyFileSync(path.join(dir, 'extension', 'icons', 'icon256.png'), path.join(site, 'icon-256.png'));
 
@@ -107,5 +90,5 @@ try {
   zipNote = 'assay-extension.zip';
 } catch (e) {}
 
-console.log('v' + version + ': assay.user.js, assay-voice.user.js, extension/assay.js, site/, install.html (' +
+console.log('v' + version + ': assay.user.js, extension/assay.js, site/, install.html (' +
   (out.length / 1024).toFixed(1) + ' KB), ' + zipNote);

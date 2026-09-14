@@ -194,21 +194,16 @@ You can now. Those canvas cards are rendered as editors, and an editor fights a 
 Open the tray, press **⚙**, then **ⓘ Copy diagnosis**. It copies what Assay can see on that page — which message-finder matched, how many turns it found, and what it thinks each editable on the page is — which is what a bug report needs.
 
 **Can I dictate instead of typing?**
-Yes, where the browser can do it **on the device**. The note box has a mic, and the tray has a **🎤 Voice scratchpad** — a near-fullscreen page you can talk into, with the words appearing as you say them. Tap a word in the scratchpad to select it, tap again for the sentence, then **Say it again** to replace just that part, **Delete** it, or **＋ Collect** it as a fragment. **↗ To composer** puts the scratchpad (or just the selected part) into the chat's message box.
+Bring your own. The tray has a **🎤 Voice scratchpad**: a near-fullscreen text field you can talk or type into. On a phone that means your keyboard's own microphone, which works everywhere and needs nothing from Assay. Where the browser has on-device recognition of its own — Chrome and Edge do — the mic buttons in the scratchpad and the note box use it directly.
 
-The first time, the browser may need a language pack; Assay asks before anything is fetched, and the browser fetches it, not us. After that it works with no network at all.
+Nothing is ever downloaded or installed for this. If the browser can't recognise speech on the device, Assay says so and points you at the keyboard rather than offering to fetch something.
+
+Everything else the scratchpad does needs no recogniser at all: tap a word to select it, tap again for the sentence, again for the paragraph — then **Say it again** to re-dictate just that part, **Delete** it, **＋ Collect** it as a fragment, or **↗ To composer** to put the scratchpad (or only the selected part) into the chat's message box.
 
 **Where does the recognition happen?**
-On your device, always — Assay will not dictate into somebody else's datacentre. Browsers do speech recognition by sending your microphone to a server unless told otherwise, so Assay uses only recognition it can pin to the device, by one of two routes:
+On your device or not at all. Browsers do speech recognition by sending your microphone to a server unless told otherwise, so Assay uses only recognition it can pin to the device, and declines rather than falling back to the other kind.
 
-- **Chrome and Edge** have on-device recognition built in. They may need a language pack; Assay asks first, and the browser fetches it.
-- **Everywhere else — including Firefox, which has no speech recognition at all** — the **extension** carries an offline recogniser. It is packaged but inert: 5.8 MB that is never loaded on a page until you press Dictate, so it costs nothing if you never dictate. The ~40 MB language model is still fetched once, on request, from `assay.projectnothing.ai/voice/` and kept in the browser's cache; after that dictation needs no network whatsoever. English today, chosen by the primary language subtag, so `en-GB` and `en-AU` reach the same model.
-
-  The engine is packaged rather than fetched because a chat page's own `connect-src` policy will not let a script running inside it fetch one — that is what defeated the download route on both chatgpt.com and github.com.
-
-  **Userscript users:** there are two. [`assay.user.js`](https://assay.projectnothing.ai/assay.user.js) is the one to install — `@grant none`, runs in the page, unchanged. [`assay-voice.user.js`](https://assay.projectnothing.ai/assay-voice.user.js) is the same code with the three grants dictation needs (`GM_xmlhttpRequest`, `GM_getResourceText`, `unsafeWindow`) and the engine as a `@resource`. Those run in the userscript manager's own context rather than the page's, so the page's policy has no say — which is the only way a userscript can dictate. It is a separate install because a grant moves the script into the manager's sandbox, and that is not a change worth making on everybody's behalf for a feature most never use.
-
-Both routes are code the extension shipped — Manifest V3 forbids running anything else, rightly, and `extension/VOSK-SOURCE.md` records exactly what that file is and how to verify it against the registry.
+Assay tried shipping an offline recogniser, and then fetching one. Neither survived contact with a chat page: the page decides whether a script inside it may reach another origin, **and** whether it may start the background worker such a recogniser runs in, and both answers are no. Packaging it also meant six megabytes in the extension and a slower review in every store — for a feature that then did not work. So it is gone, in both forms, and the scratchpad is a text field your own keyboard can dictate into instead.
 
 **Does it auto-send anything?**
 Never. ↗ To composer only fills the message box.
