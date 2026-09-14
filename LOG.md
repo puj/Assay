@@ -479,3 +479,20 @@ Append only. Never edit an entry after the fact.
   a voice userscript whose resource never arrived could not reach the code that
   says "reinstall it" — the guard had already sent it down the fetch path, where
   it tried to compile an HTML error page and reported a syntax error.
+- **2026-09-14** — "Fetching the language model… 100%", and then nothing, for
+  ever. The recogniser does its work in a Web Worker and builds that worker from
+  a blob: URL; a chat page's worker-src does not allow that, so the worker is
+  never created, nothing throws anywhere we could see, and the promise that was
+  going to hand back a model simply never settles. A progress bar that reports
+  success right up until the thing stops existing is the worst failure shape
+  there is, and it was ours.
+  It is asked first now, with a worker of our own that does nothing, and the
+  answer comes before the 40MB rather than after it. The model load has a
+  timeout as well, because a promise with no way to fail is a bug whatever the
+  cause.
+  Which settles the userscript route honestly: it cannot work on a chat page,
+  and no header, host or grant changes that — worker-src is the page's, and a
+  userscript runs in the page. The extension is not bound by it, though its
+  content script may be; if it is, the way through is an extension-origin
+  document doing the recognising and passing results back, which is a real
+  piece of work and not a patch.

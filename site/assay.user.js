@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.23.2
+// @version      0.23.3
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.23.2';
+  var VERSION = '0.23.3';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2553,16 +2553,58 @@
           else cachedFetch(url, onto, landed);
         };
         var gotModel = function (mblob) {
+          if (!workerAllowed()) {
+            return cb(false, location.hostname + ' does not allow this page to start a background worker, ' +
+              'and the recogniser runs in one. Nothing Assay or the server can do reaches that — it is the ' +
+              'page\'s own worker-src policy.' + (IN_EXTENSION ? '' : ' The extension is not bound by it.'));
+          }
           var u = URL.createObjectURL(mblob);
+          var settled = false;
+          // Even allowed, it can start and never become ready. A promise that
+          // never settles must not be the end of the story.
+          var timer = setTimeout(function () {
+            if (settled) return;
+            settled = true;
+            cb(false, 'The recogniser started but never became ready. It may be too large for this device.');
+          }, 120000);
           voskLib().createModel(u).then(function (m) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
             wasmModel = m;
             try { URL.revokeObjectURL(u); } catch (e) {}
             cb(true);
           }, function (e) {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
             cb(false, 'The language model could not be opened: ' + ((e && e.message) || 'unreadable') + '.');
           });
         };
         tryModel(0, '');
+  }
+
+  // The recogniser does its work in a Web Worker, and it builds that worker
+  // from a blob: URL. A page's own CSP decides whether that is allowed, and a
+  // chat page's generally does not allow it — so the worker is never created,
+  // nothing throws where we can see it, and the promise that was going to give
+  // us a model simply never settles. That looked like "Fetching the language
+  // model… 100%" forever, which is the worst kind of failure: the one that
+  // reports success right up until it stops existing.
+  //
+  // So it is asked first, with a worker of our own that does nothing.
+  function workerAllowed() {
+    var u = '';
+    try {
+      u = URL.createObjectURL(new Blob(['self.close()'], { type: 'application/javascript' }));
+      var w = new Worker(u);
+      w.terminate();
+      return true;
+    } catch (e) {
+      return false;
+    } finally {
+      try { if (u) URL.revokeObjectURL(u); } catch (e) {}
+    }
   }
 
   function wasmStart(h) {
@@ -2654,6 +2696,11 @@
       if (st === 'available') return onReady();
       if (st === 'downloading') return onRefuse('The language pack is still downloading. Try again in a moment.', false);
       if (st === 'downloadable') return onRefuse('', 'pack');
+      if (wasmPossible() && !workerAllowed()) {
+        return onRefuse(location.hostname + ' does not allow this page to start a background worker, and the ' +
+          'offline recogniser runs in one — so it cannot work here however it is installed. ' +
+          'That is the page\'s own policy.' + (IN_EXTENSION ? '' : ' The extension is not bound by it.'), false);
+      }
       if (wasmPossible()) {
         return onRefuse(st === 'nolocal'
           ? 'This browser can only recognise speech by sending it to a server, so Assay will not use it. It can fetch a recogniser that runs here instead.'
