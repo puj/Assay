@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.24.0
+// @version      0.25.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -250,7 +250,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.24.0';
+  var VERSION = '0.25.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2394,6 +2394,7 @@
         el: el,
         role: finder.user(el) ? 'You' : 'Assistant',
         id: (el.getAttribute && el.getAttribute('data-message-id')) || '',
+        turnNo: turnNumberOf(el),
         head: seen.head, len: seen.len, sig: seen.sig
       };
     });
@@ -2409,6 +2410,18 @@
   }
   function turnKey(t) {
     return t.id || (t.role + '|' + (t.sig || t.head));
+  }
+  // ChatGPT numbers its turns — <article data-testid="conversation-turn-N"> —
+  // and that number is the one fact about order that no amount of scrolling,
+  // loading or re-rendering can disturb. Where it exists it decides the order
+  // of the export outright; everything else is a fallback for pages without it.
+  function turnNumberOf(el) {
+    try {
+      var a = el.closest && el.closest('[data-testid^="conversation-turn-"]');
+      if (!a) return -1;
+      var n = parseInt(a.getAttribute('data-testid').replace('conversation-turn-', ''), 10);
+      return isNaN(n) ? -1 : n;
+    } catch (e) { return -1; }
   }
 
   // A message's body, read off the page. Blocks are what the exporters want:
@@ -2623,103 +2636,192 @@
     return withY.map(function (w) { w.t.y = w.y; return w.t; });
   }
   function windowTurns() {
-    return inReadingOrder(liveTurns()).map(function (t) {
+    var list = inReadingOrder(liveTurns());
+    return list.map(function (t, i) {
       return {
-        role: t.role, el: t.el, id: t.id, head: t.head, len: t.len, y: t.y,
-        b: serializeBlocks(t.el), key: turnKey(t)
+        role: t.role, el: t.el, id: t.id, turnNo: t.turnNo, head: t.head, len: t.len, y: t.y,
+        b: serializeBlocks(t.el), key: turnKey(t),
+        // A message with no id of its own is told apart from an identical one
+        // elsewhere by what comes before it: the second "Yes." in a thread has
+        // a different neighbour from the first. The first message in a window
+        // has no neighbour in view, which absorb allows for.
+        base: turnKey(t),
+        prev: i > 0 ? turnKey(list[i - 1]) : null
       };
     });
   }
   // Putting the windows together.
   //
-  // This used to look for the join — the longest run where what we hold ended
-  // the way the next window began — and fall back to appending the whole window
-  // when it could not find one. On a page that builds only what is on screen it
-  // could almost never find one, and a walk of a 58-message thread produced 421
-  // entries: seven copies of everything, in the order the windows happened to
-  // arrive. A method whose failure mode is "append it all again" is the wrong
-  // method, however well it does when it works.
-  //
-  // So nothing depends on finding the join. Each message is taken once, the
-  // first time it is met, and since the walk only ever goes downward, first-met
-  // is conversation order. A message met again is not appended; if that reading
-  // holds more of it — it was folded before and is open now — it replaces the
-  // one we have, in the place it already occupies.
-  //
-  // Two messages that genuinely read the same are kept apart by counting: a key
-  // seen twice within one window is allowed twice, three times three. Identical
-  // messages far enough apart to never share a window collapse into one, which
-  // is a small and rare loss next to seven copies of the thread.
-  function absorb(acc, win, have, at) {
-    var seenHere = {}, i;
-    for (i = 0; i < win.length; i++) {
-      var t = win[i], k = turnKey(t);
-      var n = (seenHere[k] = (seenHere[k] || 0) + 1);
-      var slot = k + '#' + n;
-      if (at[slot] === undefined) {
-        at[slot] = acc.length;
-        acc.push(t);
-        have[k] = n;
+  // One slot per message, full stop. Earlier versions allowed a key to appear
+  // twice if it appeared twice within one window, to keep two identical
+  // messages apart — and a page that momentarily holds two copies of a row
+  // while it re-renders turned that into a permanent duplicate. Identical
+  // messages are told apart by their neighbour now (see windowTurns), so the
+  // rule here can be the simple one.
+  function absorb(acc, win, at) {
+    at.byQual = at.byQual || {};
+    at.byBase = at.byBase || {};
+    function fuller(idx, t) {
+      var held = acc[idx];
+      // The same message, read again with more of it showing.
+      if ((t.b || []).join('\n').length > (held.b || []).join('\n').length) {
+        t.prev = t.prev || held.prev;
+        acc[idx] = t;
+      }
+    }
+    function add(t) {
+      var idx = acc.length;
+      acc.push(t);
+      (at.byBase[t.base] = at.byBase[t.base] || []).push(idx);
+      if (t.prev !== null) at.byQual[t.base + '<' + t.prev] = idx;
+      return idx;
+    }
+    for (var i = 0; i < win.length; i++) {
+      var t = win[i];
+      if (t.id) {
+        // An id settles it. Nothing about neighbours applies.
+        if (at[t.id] === undefined) at[t.id] = add(t); else fuller(at[t.id], t);
+        continue;
+      }
+      var known = at.byBase[t.base] || [];
+      if (t.prev !== null) {
+        var q = t.base + '<' + t.prev;
+        if (at.byQual[q] !== undefined) { fuller(at.byQual[q], t); continue; }
+        // Held already, but first met at the top of a window where its
+        // neighbour was out of view: this is that message, now with context.
+        var orphan = -1;
+        for (var k = 0; k < known.length; k++) if (acc[known[k]].prev === null) { orphan = known[k]; }
+        if (orphan >= 0) { acc[orphan].prev = t.prev; at.byQual[q] = orphan; fuller(orphan, t); continue; }
+        add(t);
       } else {
-        var held = acc[at[slot]];
-        // The same message, read again with more of it showing.
-        if ((t.len || 0) > (held.len || 0) ||
-            (t.b && held.b && t.b.join('\n').length > held.b.join('\n').length)) {
-          acc[at[slot]] = t;
-        }
+        // Top of a window, neighbour out of view. If a message that reads
+        // like this is already held, it is that one — the most recent of them,
+        // since the walk goes downward and this sits just after what was read
+        // last. Only a message never seen before starts a new entry.
+        if (known.length) { fuller(known[known.length - 1], t); continue; }
+        add(t);
       }
     }
     return acc;
   }
 
-  var HARVEST_MS = 90000;        // a ceiling, so a strange page cannot hang here
+  // The order of the export. Where the page numbers its turns, that number is
+  // the order and nothing about how the walk went can change it. Where it does
+  // not, the order is the order the capture pass met them in — and the capture
+  // pass only counts if the document held still for the whole of it.
+  function finish(acc) {
+    var numbered = acc.length > 0;
+    for (var i = 0; i < acc.length; i++) if (!(acc[i].turnNo >= 0)) { numbered = false; break; }
+    if (numbered) {
+      acc = acc.map(function (t, i) { return { t: t, i: i }; })
+        .sort(function (a, b) { return (a.t.turnNo - b.t.turnNo) || (a.i - b.i); })
+        .map(function (w) { return w.t; });
+    }
+    // Belt and braces: an id can appear once, whatever else happened.
+    var seen = {}, out = [];
+    for (var j = 0; j < acc.length; j++) {
+      var id = acc[j].id;
+      if (id) { if (seen[id]) continue; seen[id] = true; }
+      out.push(acc[j]);
+    }
+    return out;
+  }
+
+  var HARVEST_MS = 150000;       // a ceiling, so a strange page cannot hang here
+  var QUIET_MS = 2500;           // how long the top has to hold still to count as the top
   var harvestStop = false;
+  var lastWalk = null;           // what the last walk saw, for the diagnosis
   function harvest(onProgress) {
     return new Promise(function (resolve) {
       var first = liveTurns()[0];
       if (!first) return resolve([]);
       var sc = scrollerFor(first.el);
-      if (!sc) return resolve(windowTurns());      // nothing scrolls; this is all of it
-      var began = Date.now(), startTop = sc.scrollTop, acc = [], have = {}, at = {};
-      var lastHeight = -1, still = 0;
-      function done() {
-        sc.scrollTop = startTop;                   // put the page back where it was
-        resolve(acc);
-      }
+      if (!sc) return resolve(finish(windowTurns()));   // nothing scrolls; this is all of it
+      var began = Date.now(), startTop = sc.scrollTop;
+      var walk = { top: [], windows: [], passes: 0, stopped: false };
+      lastWalk = walk;
       function spent() { return harvestStop || Date.now() - began > HARVEST_MS; }
-
-      // Up: keep asking for the top until the page stops giving us more of it.
-      function up() {
-        if (spent()) return downFrom(0);
-        expandOnce();
-        sc.scrollTop = 0;
-        setTimeout(function () {
-          var h = sc.scrollHeight;
-          if (sc.scrollTop <= 2 && h === lastHeight) {
-            if (++still >= 2) return downFrom(0);   // twice unchanged is the top
-          } else { still = 0; }
-          lastHeight = h;
-          onProgress('Finding the start of the conversation…', acc.length);
-          up();
-        }, 420);
+      function step() { return Math.max(120, sc.clientHeight * 0.7); }
+      // What the top of the document looks like: how many turns there are,
+      // which is first, how tall it all is. If any of it moves, the page is
+      // still loading and nothing read so far can be trusted.
+      function snapshot() {
+        var l = liveTurns();
+        return l.length + '|' + (l[0] ? turnKey(l[0]) : '') + '|' + sc.scrollHeight;
       }
-      // Down: read each window, stitching as we go.
-      function downFrom(pos) {
+      function finishWith(acc) {
+        walk.stopped = harvestStop;
+        walk.final = acc.map(function (t) { return t.turnNo >= 0 ? t.turnNo : (t.id || t.head.slice(0, 12)); });
+        sc.scrollTop = startTop;                     // put the page back where it was
+        resolve(finish(acc));
+      }
+
+      // 1. The top. Not "unchanged twice" — a batch of older messages is a
+      // network round trip, and on a phone that is easily longer than two
+      // polls — but "nothing has changed for a good while". The scroll is
+      // nudged off zero and back between polls, since some pages load the next
+      // batch only on a fresh crossing of the top.
+      var quiet = 0, last = '';
+      function up(nudge) {
+        if (spent()) return expandDown(0);
+        sc.scrollTop = nudge ? 40 : 0;
+        setTimeout(function () {
+          sc.scrollTop = 0;
+          setTimeout(function () {
+            var snap = snapshot();
+            if (sc.scrollTop <= 2 && snap === last) quiet += 500; else quiet = 0;
+            last = snap;
+            walk.top.push(snap);
+            onProgress('Finding the start of the conversation…', liveTurns().length);
+            if (quiet >= QUIET_MS) return expandDown(0);
+            up(!nudge);
+          }, 400);
+        }, 100);
+      }
+
+      // 2. Open everything folded, top to bottom. Nothing is read on this
+      // pass: opening a message changes its text, and identity must never be
+      // taken from text that is still changing.
+      function expandDown(pos) {
         sc.scrollTop = pos;
         setTimeout(function () {
-          expandOnce();
+          var opened = 0;
+          try { opened = expandOnce(); } catch (e) {}
+          onProgress('Opening folded messages…', liveTurns().length);
+          var bottom = sc.scrollHeight - sc.clientHeight;
+          if (spent() || pos >= bottom - 2) return capture(0);
+          setTimeout(function () { expandDown(Math.min(bottom, pos + step())); }, opened ? 300 : 0);
+        }, 200);
+      }
+
+      // 3. Read, top to bottom, over a document that is holding still. If the
+      // top changed while we read — more of the thread arrived — what we read
+      // is in an order that no longer means anything, so it is read again.
+      function capture(attempt) {
+        var acc = [], at = {}, before = snapshot();
+        walk.passes++;
+        function at_(pos) {
+          sc.scrollTop = pos;
           setTimeout(function () {
-            acc = absorb(acc, windowTurns(), have, at);
+            var win = windowTurns();
+            walk.windows.push(win.map(function (t) { return t.turnNo >= 0 ? t.turnNo : (t.id || t.head.slice(0, 12)); }));
+            acc = absorb(acc, win, at);
             onProgress('Reading the conversation…', acc.length);
             var bottom = sc.scrollHeight - sc.clientHeight;
-            if (spent() || pos >= bottom - 2) return done();
-            // Less than a screen, so consecutive windows always overlap and
-            // the join can be found.
-            downFrom(Math.min(bottom, pos + Math.max(120, sc.clientHeight * 0.7)));
-          }, 160);
-        }, 240);
+            if (spent() || pos >= bottom - 2) {
+              sc.scrollTop = 0;
+              setTimeout(function () {
+                if (!spent() && snapshot() !== before && attempt < 2) return capture(attempt + 1);
+                finishWith(acc);
+              }, 300);
+              return;
+            }
+            at_(Math.min(bottom, pos + step()));
+          }, 180);
+        }
+        at_(0);
       }
-      up();
+      up(false);
     });
   }
 
@@ -3020,6 +3122,14 @@
       lines.push('running as: ' + f.runtime);
       lines.push('voice: recogniser=' + f.voice.ctor + ' onDeviceApi=' + f.voice.onDeviceApi +
         ' lang=' + f.voice.lang);
+      if (f.walk) {
+        lines.push('last walk: ' + f.walk.passes + ' pass(es), ' + f.walk.windows + ' windows' +
+          (f.walk.stopped ? ', stopped' : ''));
+        lines.push('  top settled on: ' + f.walk.top.join(' / '));
+        lines.push('  first windows: ' + JSON.stringify(f.walk.first3));
+        lines.push('  last windows: ' + JSON.stringify(f.walk.last2));
+        lines.push('  final order: ' + JSON.stringify(f.walk.final));
+      }
       f.strategies.forEach(function (st, i) { lines.push('finder ' + (i + 1) + ': ' + st.n + '  ' + st.sel.slice(0, 60)); });
       lines.push('by shape: ' + f.structural + ' | used: ' + f.found + ' | roles: ' + (f.roles || []).join(','));
       if (f.sample && f.sample.length) lines.push('page shape: ' + f.sample.join('  '));
@@ -3077,10 +3187,18 @@
       renderPicks();
       pickList.scrollTop = pickList.scrollHeight;
       var gained = turns.length - before;
+      // Say what the walk can vouch for. On a page that numbers its turns the
+      // numbers should run without a gap; a gap is a message the page never
+      // built, and that is worth knowing before the file is written.
+      var numbered = turns.every(function (t) { return t.turnNo >= 0; }), gaps = 0;
+      if (numbered) {
+        for (var i = 1; i < turns.length; i++) if (turns[i].turnNo > turns[i - 1].turnNo + 1) gaps++;
+      }
+      var vouch = numbered ? (gaps ? ', ' + gaps + ' gap' + (gaps === 1 ? '' : 's') + ' the page never loaded' : ', in order, none repeated') : '';
       toast(harvestStop
         ? 'Stopped — ' + turns.length + ' messages'
-        : (gained > 0 ? 'Found ' + gained + ' more — ' + turns.length + ' messages in all'
-                      : 'That was already all of it — ' + turns.length + ' messages'), 2600);
+        : (gained > 0 ? 'Found ' + gained + ' more — ' + turns.length + ' messages' + vouch
+                      : 'That was already all of it — ' + turns.length + ' messages' + vouch), 3200);
     }, function () {
       harvesting = false;
       setScan(false);
@@ -3554,6 +3672,12 @@
     _find: function () {
       var out = {
         strategies: [], structural: 0, found: 0, sample: [],
+        walk: lastWalk ? {
+          passes: lastWalk.passes, stopped: lastWalk.stopped,
+          top: lastWalk.top.slice(-6), windows: lastWalk.windows.length,
+          first3: lastWalk.windows.slice(0, 3), last2: lastWalk.windows.slice(-2),
+          final: lastWalk.final
+        } : null,
         runtime: IN_EXTENSION ? 'extension' : 'userscript/page',
         voice: {
           ctor: !!voiceCtor(),

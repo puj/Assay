@@ -519,3 +519,28 @@ Append only. Never edit an entry after the fact.
   Deleted: extension/vosk.js and its source note, assay-voice.user.js, the
   fetch-voice script, site/voice/ and the CORS rule that served it. The package
   is 8 files and 162KB, as it was before any of this.
+- **2026-09-18** — "time after time the walk has duplicates and is out of order."
+  Three versions of it had passed their mocks and failed the phone, so this one
+  started by not trusting the mock: a page modelled on what chatgpt.com actually
+  does — numbered <article> turns, older messages arriving in batches after a
+  network delay, reasoning blocks that insert text before the answer when
+  opened. The shipped walk passed that too, until the batch delay went past its
+  patience: two unchanged polls, about 840ms, and a phone's network round trip
+  is longer than that. Then it stopped looking for the top with 16 of 58 read.
+  That is incompleteness rather than the reported duplication, and I could not
+  reproduce the reported symptom exactly. What I could do was remove the
+  mechanisms that produce it. Order on ChatGPT is now the page's own turn
+  number, which no scrolling or loading can disturb, rather than the order the
+  walk happened to meet things in. Identity is the message id, one slot each,
+  no exceptions — the earlier rule that let a key appear twice if a window held
+  it twice was how a re-rendering page minted a permanent duplicate. Messages
+  without ids are told apart from identical ones by their neighbour, with the
+  top of a window allowed to have no neighbour in view. The top is found by
+  quiet — nothing changing for two and a half seconds, nudged off zero and back
+  between polls — not by two polls. Folded messages are opened in a pass that
+  reads nothing, and reading happens in a pass that opens nothing, because
+  identity must never be taken from text still changing; and if the top moved
+  while the reading pass ran, the pass is thrown away and run again.
+  The walk keeps a trace now — what the top settled on, what each window held,
+  the final order — and the diagnosis copies it. If it is wrong a fourth time,
+  the fourth time will come with data.
