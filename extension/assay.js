@@ -4,7 +4,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.25.1';
+  var VERSION = '0.26.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -161,8 +161,12 @@
     '.chip.show{display:flex}' +
     '.pill{position:fixed;right:12px;bottom:110px;display:none;align-items:center;gap:8px;' +
       'background:#111827;color:#f9fafb;padding:12px 18px;border-radius:999px;font-size:15px;font-weight:600;' +
-      'box-shadow:0 6px 20px rgba(0,0,0,.4);z-index:25;touch-action:manipulation}' +
+      'box-shadow:0 6px 20px rgba(0,0,0,.4);z-index:25;touch-action:none;cursor:grab}' +
     '.pill.show{display:flex}' +
+    '.pill.dragging{cursor:grabbing;box-shadow:0 10px 28px rgba(0,0,0,.5)}' +
+    // Compact: a 46px round badge — the count when there is one, an A otherwise.
+    '.pill.compact{padding:0;width:46px;height:46px;justify-content:center;gap:0;font-size:17px}' +
+    '.pill.compact .n{min-width:0;height:auto;background:transparent;color:#38bdf8;font-size:16px;padding:0}' +
     '.pill .n{background:#38bdf8;color:#0c1220;border-radius:999px;min-width:24px;height:24px;display:flex;' +
       'align-items:center;justify-content:center;font-size:13px;padding:0 6px}' +
     '.sheet{position:fixed;left:0;right:0;bottom:0;max-height:70vh;display:none;flex-direction:column;' +
@@ -343,6 +347,7 @@
       '</div>' +
       '<div class="actions actions-settings off" id="settingsRow">' +
         '<button class="btn minor" id="flatBtn" title="Read cards the site made editable as ordinary text">Cards: text</button>' +
+        '<button class="btn minor" id="compactBtn" title="A small round button instead of the Assay pill">Button: full</button>' +
         '<button class="btn minor" id="diagBtn" title="Copy what Assay can see on this page">&#x24D8; Copy diagnosis</button>' +
       '</div>' +
       '<div class="actions last">' +
@@ -531,6 +536,10 @@
     var n = fragments.length;
     $('count').textContent = String(n);
     $('count').style.display = n ? 'flex' : 'none';
+    // Compact shows one thing: the count, or an A when there is nothing yet.
+    pill.classList.toggle('compact', compactPill);
+    $('pillLabel').textContent = compactPill ? 'A' : 'Assay';
+    $('pillLabel').style.display = (compactPill && n) ? 'none' : '';
     // The picker is a decision, not a place to keep collecting: the pill would
     // only sit over its rows.
     // (`picker` is bound further down; before that there is nothing to hide.)
@@ -564,13 +573,84 @@
     window.visualViewport.addEventListener('scroll', syncViewport);
   }
 
+  // Where the button sits: wherever it was last dragged to, as an offset from
+  // the nearer side and from the bottom of the visible viewport, so the
+  // keyboard lifts it, a phone turned sideways still keeps it on the screen,
+  // and a button parked against the left edge stays against the left edge
+  // when it changes width. The open sheet pushes it up whatever the offset says.
+  var PILL_KEY = 'assay.pill.v1';
+  var pillPos = loadJSON(PILL_KEY, null);
+  var compactPill = loadJSON(PILL_KEY, {}).compact === true;
   function positionPill() {
     var ins = viewportInsets();
+    var w = pill.offsetWidth || 90, h = pill.offsetHeight || 46;
+    var bottom = pillPos && typeof pillPos.bottom === 'number' ? pillPos.bottom : 110;
+    bottom = Math.max(4, Math.min(bottom, ins.height - h - 4));
     if (sheetOpen && sheet.classList.contains('show')) {
-      pill.style.bottom = (ins.bottom + sheet.offsetHeight + 12) + 'px';
-    } else {
-      pill.style.bottom = (ins.bottom + 110) + 'px';
+      bottom = Math.max(bottom, sheet.offsetHeight + 12);
     }
+    if (pillPos && typeof pillPos.left === 'number') {
+      pill.style.left = Math.max(4, Math.min(pillPos.left, window.innerWidth - w - 4)) + 'px';
+      pill.style.right = 'auto';
+    } else {
+      var right = pillPos && typeof pillPos.right === 'number' ? pillPos.right : 12;
+      pill.style.right = Math.max(4, Math.min(right, window.innerWidth - w - 4)) + 'px';
+      pill.style.left = 'auto';
+    }
+    pill.style.bottom = (ins.bottom + bottom) + 'px';
+  }
+  function savePill() {
+    var o = { compact: compactPill };
+    if (pillPos) { o.left = pillPos.left; o.right = pillPos.right; o.bottom = pillPos.bottom; }
+    saveMap(PILL_KEY, o);
+  }
+  // Drag to move, by finger or mouse. A press that travels less than a few
+  // pixels is a tap and opens the sheet as before; one that travels further is
+  // a drag, and the click that follows it is swallowed so letting go does not
+  // also open the sheet.
+  var pillDrag = null, pillDragged = false;
+  pill.addEventListener('pointerdown', function (e) {
+    if (e.button && e.button !== 0) return;
+    var r = pill.getBoundingClientRect(), ins = viewportInsets();
+    pillDrag = { id: e.pointerId, x: e.clientX, y: e.clientY,
+      right: window.innerWidth - r.right, bottom: window.innerHeight - r.bottom - ins.bottom };
+    pillDragged = false;
+    try { pill.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  pill.addEventListener('pointermove', function (e) {
+    if (!pillDrag || e.pointerId !== pillDrag.id) return;
+    var dx = e.clientX - pillDrag.x, dy = e.clientY - pillDrag.y;
+    if (!pillDragged && Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+    pillDragged = true;
+    pill.classList.add('dragging');
+    pillPos = { right: Math.round(pillDrag.right - dx), bottom: Math.round(pillDrag.bottom - dy) };
+    positionPill();
+    e.preventDefault();
+  });
+  function endPillDrag(e) {
+    if (!pillDrag || e.pointerId !== pillDrag.id) return;
+    pillDrag = null;
+    pill.classList.remove('dragging');
+    if (pillDragged) {
+      // Keep what the clamp settled on, not where the finger went, anchored
+      // to whichever side of the screen the button is nearer.
+      var r = pill.getBoundingClientRect(), ins = viewportInsets();
+      pillPos = { bottom: Math.round(window.innerHeight - r.bottom - ins.bottom) };
+      if (r.left + r.width / 2 < window.innerWidth / 2) pillPos.left = Math.round(r.left);
+      else pillPos.right = Math.round(window.innerWidth - r.right);
+      savePill();
+    }
+  }
+  pill.addEventListener('pointerup', endPillDrag);
+  pill.addEventListener('pointercancel', endPillDrag);
+  pill.addEventListener('click', function (e) {
+    if (pillDragged) { pillDragged = false; e.stopImmediatePropagation(); e.preventDefault(); }
+  }, true);
+  window.addEventListener('resize', positionPill);
+  // The sheet changes height as rows open and fragments arrive; the button
+  // sits just above it, so it follows.
+  if (window.ResizeObserver) {
+    try { new ResizeObserver(function () { positionPill(); }).observe(sheet); } catch (e) {}
   }
 
   function addFragment(text, note, notePos, verb) {
@@ -2897,7 +2977,15 @@
   });
   function paintFlatBtn() {
     $('flatBtn').textContent = flatCards ? 'Cards: text' : 'Cards: editable';
+    $('compactBtn').textContent = compactPill ? 'Button: compact' : 'Button: full';
   }
+  $('compactBtn').addEventListener('click', function () {
+    compactPill = !compactPill;
+    savePill();
+    paintFlatBtn();
+    updatePill();
+    toast(compactPill ? 'Small round button — drag it anywhere' : 'Full Assay button — drag it anywhere', 2200);
+  });
   $('flatBtn').addEventListener('click', function () {
     flatCards = !flatCards;
     saveMap(FLAT_KEY, { on: flatCards });

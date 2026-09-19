@@ -560,3 +560,15 @@ Append only. Never edit an entry after the fact.
   pin the head and tail now, one of them building only a screen's worth around
   the viewport with spacers for the rest; 393 checks. The stale engine file in
   the zip allowlist from 0.23 is gone.
+- **2026-09-19** — 0.26.0. The Assay button moves: drag it by finger or mouse
+  and it stays where it was put, remembered per device as an offset from the
+  nearer side and from the bottom of the visible viewport, so the keyboard
+  still lifts it and a button parked on the left stays on the left when it
+  changes width. A press that travels under six pixels is a tap and opens the
+  sheet as before; one that travels further is a drag, and the click that
+  follows is swallowed. It cannot be lost off an edge. The open sheet still
+  pushes it up out of the way, now also when the sheet grows under it — a
+  ResizeObserver, since the settings row opening had left the button sitting
+  on the sheet's header. In settings, "Button: full / compact": compact is a
+  46px round badge showing the count, or an A when nothing is collected. Off
+  by default. 407 checks.
