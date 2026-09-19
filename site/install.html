@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.25.0
+// @version      0.25.1
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -250,7 +250,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.25.0';
+  var VERSION = '0.25.1';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2742,18 +2742,45 @@
       lastWalk = walk;
       function spent() { return harvestStop || Date.now() - began > HARVEST_MS; }
       function step() { return Math.max(120, sc.clientHeight * 0.7); }
-      // What the top of the document looks like: how many turns there are,
-      // which is first, how tall it all is. If any of it moves, the page is
-      // still loading and nothing read so far can be trusted.
+      // What the top of the document looks like: which turns are built while
+      // the scroll sits at zero. Not how tall the page is, which changes as
+      // images load and folds open, and not the first turn alone: chatgpt.com
+      // keeps the first turn in the document at every scroll position, so by
+      // that measure the top had "settled" before a single older message had
+      // arrived, and the walk missed a third of a long thread.
       function snapshot() {
-        var l = liveTurns();
-        return l.length + '|' + (l[0] ? turnKey(l[0]) : '') + '|' + sc.scrollHeight;
+        return inReadingOrder(liveTurns()).map(function (t) {
+          return t.turnNo >= 0 ? t.turnNo : turnKey(t);
+        }).join(',');
       }
+      function label(t) { return t.turnNo >= 0 ? t.turnNo : (t.id || t.head.slice(0, 12)); }
       function finishWith(acc) {
         walk.stopped = harvestStop;
-        walk.final = acc.map(function (t) { return t.turnNo >= 0 ? t.turnNo : (t.id || t.head.slice(0, 12)); });
+        var out = finish(acc);
+        // The trace records what the export is, not what the walk held before
+        // it was put in order — the two differed, and the trace was read as
+        // the export.
+        walk.final = out.map(label);
         sc.scrollTop = startTop;                     // put the page back where it was
-        resolve(finish(acc));
+        resolve(out);
+      }
+      // On a page that numbers its turns and keeps the last of them in view at
+      // every scroll position — as chatgpt.com does — the number of the final
+      // turn is known from the first window, and the walk is done the moment
+      // every number from the first to it is held. The rest of the scroll would
+      // only read the same pinned tail eighty more times.
+      function complete(acc) {
+        if (!acc.length) return false;
+        var lo = Infinity, hi = -Infinity, seen = {};
+        for (var i = 0; i < acc.length; i++) {
+          var n = acc[i].turnNo;
+          if (!(n >= 0)) return false;
+          if (n < lo) lo = n;
+          if (n > hi) hi = n;
+          seen[n] = true;
+        }
+        for (var k = lo; k <= hi; k++) if (!seen[k]) return false;
+        return hi - lo + 1 === acc.length;
       }
 
       // 1. The top. Not "unchanged twice" — a batch of older messages is a
@@ -2798,16 +2825,28 @@
       // top changed while we read — more of the thread arrived — what we read
       // is in an order that no longer means anything, so it is read again.
       function capture(attempt) {
-        var acc = [], at = {}, before = snapshot();
+        var acc = [], at = {}, before = null;
         walk.passes++;
         function at_(pos) {
           sc.scrollTop = pos;
           setTimeout(function () {
+            // The top is remembered as it looks from the top, once the scroll
+            // has settled there — not as it looked from wherever the opening
+            // pass left off, which on a page that builds only what is near
+            // the screen is a different set of turns every time.
+            if (before === null) before = snapshot();
             var win = windowTurns();
-            walk.windows.push(win.map(function (t) { return t.turnNo >= 0 ? t.turnNo : (t.id || t.head.slice(0, 12)); }));
+            walk.windows.push(win.map(label));
             acc = absorb(acc, win, at);
             onProgress('Reading the conversation…', acc.length);
             var bottom = sc.scrollHeight - sc.clientHeight;
+            // Every numbered turn from first to last is held: one look at the
+            // very bottom, to be sure nothing sits past the last number, and
+            // then done.
+            if (complete(acc) && pos < bottom - 2 && !walk.tailChecked) {
+              walk.tailChecked = true;
+              return at_(bottom);
+            }
             if (spent() || pos >= bottom - 2) {
               sc.scrollTop = 0;
               setTimeout(function () {

@@ -544,3 +544,19 @@ Append only. Never edit an entry after the fact.
   The walk keeps a trace now — what the top settled on, what each window held,
   the final order — and the diagnosis copies it. If it is wrong a fourth time,
   the fourth time will come with data.
+- **2026-09-19** — 0.25.1. The first diagnosis with a walk trace in it, from
+  chatgpt.com on the phone, and it paid for itself: the page keeps the first
+  turn and the last five in the document at every scroll position, so every one
+  of 86 windows held 1 and 66–70 around a moving band of six. No mock had done
+  that. Three consequences, all fixed: the top was judged by the first turn,
+  which never changes on such a page, so on a slow network the walk declared
+  the top found with a third of the thread still to arrive — it now watches
+  which turns are built while the scroll sits at zero; the reading pass
+  remembered the top as it looked from the bottom, so it always read the thread
+  twice — it now remembers it from the top; and a walk that already holds every
+  number from first to last stops after one look at the bottom instead of
+  re-reading the pinned tail eighty more times (86 windows → 12). The trace now
+  records the sorted export, which is what a reader takes it for. Three mocks
+  pin the head and tail now, one of them building only a screen's worth around
+  the viewport with spacers for the rest; 393 checks. The stale engine file in
+  the zip allowlist from 0.23 is gone.
