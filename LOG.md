@@ -677,3 +677,19 @@ Append only. Never edit an entry after the fact.
   test dispatches 600 viewport events in a tick and sees one pass, and forty
   scroll frames with twenty marks and a selection open and sees forty bar
   moves and nothing else. 495 checks.
+- **2026-09-25** — 0.27.2. The walk goes back to 0.26.0's mechanics, at the
+  request of the one person who has watched it on a phone: the scroller is
+  the message's nearest scrolling ancestor, else the document, and every
+  scroll is a plain scrollTop. The probing scroller, the style override, the
+  bring-into-view fallback, the crawl from the landed position and the climb
+  in hops — 0.26.4 and 0.26.5 — are gone from the walk. Their helpers stay
+  in the diagnosis, which is where they earned their keep. Kept: the label
+  finder, the viewer skip, the census, the ids, cross-paragraph selection,
+  the viewport pass. For the record: the 0.26.4 and 0.26.5 diagnoses both
+  show this layout's thread-scroll-container, right overflow, real range,
+  taking a scrollTop and staying at zero, and 0.26.1–0.26.3 ran the plain
+  walk on it and did not scroll either — so a revert alone is unlikely to
+  scroll it. The census now adds every tall ancestor of the first message,
+  whatever its overflow, with whether it moves, and the browser string. If
+  the page scrolls some element that hides its overflow, that line will name
+  it. 492 checks.
