@@ -632,3 +632,21 @@ Append only. Never edit an entry after the fact.
   no innerText, so textOf falls back to what is in the document. New mock of
   the new layout, document-scrolled with smooth behaviour and a decoy inner
   scroller. 467 checks.
+- **2026-09-25** — 0.26.5. The trace said it plainly: the thread's own scroll
+  container — right overflow, a real scroll range, holds the thread — takes a
+  scrollTop and stays at zero. Sent 786, got 0; sent 1572, got 0. New with
+  this layout, which is why 0.26.0 scrolled and this did not. From here the
+  why is not visible, so the walk stops depending on it. Smooth scrolling is
+  defeated by style on the element itself, not by an enum some browsers do not
+  know. When the container will not move, the message nearest the wanted
+  position is brought into view, and the browser scrolls whatever must scroll.
+  Each step now starts from where the scroll landed, not where it was sent,
+  since a container that moves only by bringing a message into view lands
+  wherever that message is; a step that lands no further than the last is the
+  bottom; and the way back to the top is climbed in hops until it stops
+  rising, before and after each reading pass. A stuck container counts as at
+  the top once the first message is. The trace says how many times a message
+  was brought into view; the census prints the container's scroll-related
+  styles and whether scrollIntoView moves it. A doubled message id reads as
+  one. A mock whose container ignores scrollTop, scrolls by scrollIntoView and
+  empties far turns to spacers: 40 of 40, in order. 476 checks.

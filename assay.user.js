@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.26.4
+// @version      0.26.5
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.26.4';
+  var VERSION = '0.26.5';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2224,7 +2224,7 @@
     var own = el.getAttribute('data-message-id') || el.getAttribute('data-turn-id');
     if (own) return own;
     var units = el.querySelectorAll('[data-chatgpt-search-message-ids]');
-    if (units.length === 1) return units[0].getAttribute('data-chatgpt-search-message-ids') || '';
+    if (units.length === 1) return ((units[0].getAttribute('data-chatgpt-search-message-ids') || '').trim().split(/\s+/)[0]) || '';
     return '';
   }
   // The messages the page is rendering right now, in order.
@@ -2513,8 +2513,42 @@
   // scroll-behavior says, since a walk that reads 180ms after asking for a
   // position needs the position, not the start of an animation towards it.
   function setTop(n, y) {
-    try { if (n.scrollTo) { n.scrollTo({ top: y, behavior: 'instant' }); return; } } catch (e) {}
+    // The page's scroll-behavior is overridden on the element itself, since
+    // not every browser knows the 'instant' keyword, and a walk cannot wait
+    // on an animation it cannot see the end of.
+    try {
+      var styled = (n === document.scrollingElement || n === document.documentElement) ? document.documentElement : n;
+      if (styled.style && !styled.getAttribute('data-assay-sb')) {
+        styled.setAttribute('data-assay-sb', styled.style.scrollBehavior || '-');
+        styled.style.setProperty('scroll-behavior', 'auto', 'important');
+      }
+    } catch (e) {}
     n.scrollTop = y;
+  }
+  function restoreScrollStyle(n) {
+    try {
+      var styled = (n === document.scrollingElement || n === document.documentElement) ? document.documentElement : n;
+      var was = styled.getAttribute('data-assay-sb');
+      if (was == null) return;
+      styled.removeAttribute('data-assay-sb');
+      if (was === '-') styled.style.removeProperty('scroll-behavior'); else styled.style.scrollBehavior = was;
+    } catch (e) {}
+  }
+  // When the container will not take a scrollTop, ask the browser to bring
+  // the message nearest the wanted position into view instead; it finds its
+  // own way to scroll whatever must scroll. Returns what it did.
+  function bringNear(sc, pos) {
+    var turns = liveTurns(), best = null, bestD = Infinity, scTop = 0;
+    try { scTop = (sc === document.scrollingElement || sc === document.documentElement) ? 0 : sc.getBoundingClientRect().top; } catch (e) {}
+    for (var i = 0; i < turns.length; i++) {
+      var y = 0;
+      try { y = turns[i].el.getBoundingClientRect().top - scTop + sc.scrollTop; } catch (e) { continue; }
+      var d = Math.abs(y - pos);
+      if (d < bestD) { best = turns[i].el; bestD = d; }
+    }
+    if (!best) return false;
+    try { best.scrollIntoView({ block: 'start', behavior: 'auto' }); } catch (e) { try { best.scrollIntoView(true); } catch (e2) {} }
+    return true;
   }
   // Does assigning to this element's scrollTop change it? A page can hand
   // the walk an element that reports a scroll range and refuses to move —
@@ -2522,7 +2556,13 @@
   // stirs, which is what a walk that "did not scroll" looks like.
   function moves(n) {
     var was = n.scrollTop, to = was > 0 ? was - 1 : 1, ok = false;
+    var marked = false;
+    try {
+      var styled = (n === document.scrollingElement || n === document.documentElement) ? document.documentElement : n;
+      marked = !!styled.getAttribute('data-assay-sb');   // a walk is holding the override; leave it
+    } catch (e) {}
     try { setTop(n, to); ok = n.scrollTop !== was; setTop(n, was); } catch (e) {}
+    if (!marked) restoreScrollStyle(n);                  // a probe leaves no style behind
     return ok;
   }
   function describeEl(n) {
@@ -2740,8 +2780,18 @@
       if (!sc) return resolve(finish(windowTurns()));   // nothing scrolls; this is all of it
       var began = Date.now(), startTop = sc.scrollTop;
       var walk = { top: [], windows: [], passes: 0, stopped: false, dialogs: 0,
-        scroller: lastScrollers ? lastScrollers.picked : describeEl(sc), moved: [] };
+        scroller: lastScrollers ? lastScrollers.picked : describeEl(sc), moved: [], byView: 0 };
       dialogsClosed = 0;
+      var stuck = !moves(sc);
+      // Where to scroll to. The container first; when it will not move, the
+      // message nearest that position is brought into view instead, and the
+      // trace says so.
+      function goTo(pos) {
+        setTop(sc, pos);
+        if (stuck || Math.abs(sc.scrollTop - pos) > 50) {
+          if (bringNear(sc, pos)) walk.byView++;
+        }
+      }
       lastWalk = walk;
       function spent() { return harvestStop || Date.now() - began > HARVEST_MS; }
       function step() { return Math.max(120, sc.clientHeight * 0.7); }
@@ -2765,7 +2815,8 @@
         // it was put in order — the two differed, and the trace was read as
         // the export.
         walk.final = out.map(label);
-        setTop(sc, startTop);                        // put the page back where it was
+        goTo(startTop);                              // put the page back where it was
+        restoreScrollStyle(sc);
         resolve(out);
       }
       // On a page that numbers its turns and keeps the last of them in view at
@@ -2795,12 +2846,14 @@
       var quiet = 0, last = '';
       function up(nudge) {
         if (spent()) return expandDown(0);
-        setTop(sc, nudge ? 40 : 0);
+        goTo(nudge ? 40 : 0);
         setTimeout(function () {
-          setTop(sc, 0);
+          goTo(0);
           setTimeout(function () {
             var snap = snapshot();
-            if (sc.scrollTop <= 2 && snap === last) quiet += 500; else quiet = 0;
+            // A container that only moves by bringing a message into view
+            // settles wherever the first message's top lands, not at zero.
+            if ((stuck || sc.scrollTop <= 2) && snap === last) quiet += 500; else quiet = 0;
             last = snap;
             walk.top.push(snap);
             onProgress('Finding the start of the conversation…', liveTurns().length);
@@ -2813,15 +2866,38 @@
       // 2. Open everything folded, top to bottom. Nothing is read on this
       // pass: opening a message changes its text, and identity must never be
       // taken from text that is still changing.
+      // Each step starts from where the scroll actually landed, not from
+      // where it was sent: a container that moves only by bringing a message
+      // into view lands wherever that message is, and a walk that added its
+      // step to the wish rather than the fact hopped about the page. And a
+      // step that lands no further down than the last one is the bottom,
+      // whatever the scroll range claims.
+      // Back to the top, however many hops it takes: a container that moves
+      // only by bringing a message into view climbs one screen per hop, and a
+      // read that began one hop up from the bottom read the bottom.
+      function climb(done) {
+        var prev = null;
+        (function hop() {
+          goTo(0);
+          setTimeout(function () {
+            var here = sc.scrollTop;
+            if (here <= 2 || spent() || (prev !== null && here >= prev - 2)) return done();
+            prev = here;
+            hop();
+          }, stuck ? 150 : 0);
+        })();
+      }
+      var lastExp = null;
       function expandDown(pos) {
-        setTop(sc, pos);
+        goTo(pos);
         setTimeout(function () {
-          var opened = 0;
+          var opened = 0, here = sc.scrollTop;
           try { opened = expandOnce(); } catch (e) {}
           onProgress('Opening folded messages…', liveTurns().length);
           var bottom = sc.scrollHeight - sc.clientHeight;
-          if (spent() || pos >= bottom - 2) return capture(0);
-          setTimeout(function () { expandDown(Math.min(bottom, pos + step())); }, opened ? 300 : 0);
+          if (spent() || here >= bottom - 2 || (lastExp !== null && here <= lastExp + 2)) return capture(0);
+          lastExp = here;
+          setTimeout(function () { expandDown(Math.min(bottom, here + step())); }, opened ? 300 : 0);
         }, 200);
       }
 
@@ -2829,13 +2905,14 @@
       // top changed while we read — more of the thread arrived — what we read
       // is in an order that no longer means anything, so it is read again.
       function capture(attempt) {
-        var acc = [], at = {}, before = null;
+        var acc = [], at = {}, before = null, lastHere = null;
         walk.passes++;
         function at_(pos) {
-          setTop(sc, pos);
+          goTo(pos);
           setTimeout(function () {
+            var here = sc.scrollTop;
             // Where the scroll actually went, against where it was sent.
-            if (walk.moved.length < 4) walk.moved.push(Math.round(pos) + '→' + Math.round(sc.scrollTop));
+            if (walk.moved.length < 4) walk.moved.push(Math.round(pos) + '→' + Math.round(here));
             // The top is remembered as it looks from the top, once the scroll
             // has settled there — not as it looked from wherever the opening
             // pass left off, which on a page that builds only what is near
@@ -2849,22 +2926,25 @@
             // Every numbered turn from first to last is held: one look at the
             // very bottom, to be sure nothing sits past the last number, and
             // then done.
-            if (complete(acc) && pos < bottom - 2 && !walk.tailChecked) {
+            if (complete(acc) && here < bottom - 2 && !walk.tailChecked) {
               walk.tailChecked = true;
               return at_(bottom);
             }
-            if (spent() || pos >= bottom - 2) {
-              setTop(sc, 0);
-              setTimeout(function () {
-                if (!spent() && snapshot() !== before && attempt < 2) return capture(attempt + 1);
-                finishWith(acc);
-              }, 300);
+            var stalled = lastHere !== null && here <= lastHere + 2;
+            lastHere = here;
+            if (spent() || here >= bottom - 2 || stalled) {
+              climb(function () {
+                setTimeout(function () {
+                  if (!spent() && snapshot() !== before && attempt < 2) return capture(attempt + 1);
+                  finishWith(acc);
+                }, 300);
+              });
               return;
             }
-            at_(Math.min(bottom, pos + step()));
+            at_(Math.min(bottom, here + step()));
           }, 180);
         }
-        at_(0);
+        climb(function () { at_(0); });
       }
       up(false);
     });
@@ -3178,7 +3258,8 @@
       if (f.walk) {
         lines.push('last walk: ' + f.walk.passes + ' pass(es), ' + f.walk.windows + ' windows' +
           (f.walk.stopped ? ', stopped' : ''));
-        lines.push('  scrolled: ' + f.walk.scroller + ' | sent→got: ' + (f.walk.moved || []).join(' '));
+        lines.push('  scrolled: ' + f.walk.scroller + ' | sent→got: ' + (f.walk.moved || []).join(' ') +
+          (f.walk.byView ? ' | brought into view ' + f.walk.byView + '×' : ''));
         lines.push('  top settled on: ' + f.walk.top.join(' / '));
         lines.push('  first windows: ' + JSON.stringify(f.walk.first3));
         lines.push('  last windows: ' + JSON.stringify(f.walk.last2));
@@ -3197,6 +3278,8 @@
         });
         if (f.census.markdownPath) lines.push('  first markdown: ' + f.census.markdownPath);
         if (f.census.scrollers) lines.push('  scrollers: ' + f.census.scrollers.join(' | '));
+        if (f.census.scrollerStyle) lines.push('  scroller style: ' + f.census.scrollerStyle + ' | parent: ' + f.census.scrollerParent);
+        if (f.census.scrollIntoView) lines.push('  scrollIntoView: ' + f.census.scrollIntoView);
       }
       if (f.sample && f.sample.length) lines.push('page shape: ' + f.sample.join('  '));
       lines.push('cards: ' + (flatCards ? 'text' : 'editable'));
@@ -3742,7 +3825,7 @@
           passes: lastWalk.passes, stopped: lastWalk.stopped, dialogs: lastWalk.dialogs,
           top: lastWalk.top.slice(-6), windows: lastWalk.windows.length,
           first3: lastWalk.windows.slice(0, 3), last2: lastWalk.windows.slice(-2),
-          scroller: lastWalk.scroller, moved: lastWalk.moved,
+          scroller: lastWalk.scroller, moved: lastWalk.moved, byView: lastWalk.byView,
           final: lastWalk.final
         } : null,
         runtime: IN_EXTENSION ? 'extension' : 'userscript/page',
@@ -3822,6 +3905,22 @@
             out.census.scrollers = cands.slice(0, 6).map(function (c) {
               return describeEl(c) + (c.contains(f0) ? ' holds-thread' : '') + (moves(c) ? ' moves' : ' stuck');
             });
+            var pick = cands[0];
+            if (pick) {
+              var cs = getComputedStyle(pick), keys = ['overflow-y', 'scroll-behavior', 'scroll-snap-type', 'overscroll-behavior-y', 'position', 'display', 'height', 'touch-action', 'pointer-events'];
+              out.census.scrollerStyle = keys.map(function (k) { return k + ':' + cs.getPropertyValue(k); }).join(' ');
+              out.census.scrollerParent = pick.parentElement ? describeEl(pick.parentElement) + ' ' + getComputedStyle(pick.parentElement).getPropertyValue('overflow-y') : 'none';
+              // Does scrollIntoView on the second message move the container?
+              var was = pick.scrollTop, second = live[1] && live[1].el;
+              if (second) {
+                setTop(pick, was);                       // holds the instant override while we look
+                try { second.scrollIntoView({ block: 'start', behavior: 'auto' }); } catch (e) {}
+                out.census.scrollIntoView = (pick.scrollTop !== was ? 'moves the container to ' + Math.round(pick.scrollTop) : 'does not move the container') +
+                  ', document at ' + Math.round(window.scrollY);
+                try { second.scrollIntoView({ block: 'start', behavior: 'auto' }); pick.scrollTop = was; window.scrollTo(0, 0); } catch (e) {}
+                restoreScrollStyle(pick);
+              }
+            }
           }
         } catch (e) { out.census.err = e.message; }
         var root = (!live.length || !named) ? (document.querySelector('main') || document.body) : null;
