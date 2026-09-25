@@ -601,3 +601,16 @@ Append only. Never edit an entry after the fact.
   first markdown block — now runs whenever only the shape fallback found
   anything, not only when nothing did; the last paste came without it because
   four blocks counted as found. 429 checks.
+- **2026-09-25** — 0.26.3. The label finder found all ten turns and got half
+  of them wrong. The diagnosis showed five assistant turns whose text was
+  "ChatGPT said" and nothing else, sorted ahead of every human turn: each had
+  resolved to the small wrapper holding only the hidden label, and a hidden
+  wrapper sorts by wherever the page clipped it to. The message was the
+  wrapper's next sibling, not the label's. Rewritten: a label's turn is the
+  highest wrapper holding this label and no other; when that wrapper holds
+  nothing but the label, the turn is the widest of the siblings between it and
+  the next label; and a label with no message is not a turn at all. Two more
+  shapes in the mock, one of them this one. The census in the diagnosis now
+  runs on every page, and names, for the first label of each side, where the
+  finder put its turn and how much text that turn holds — with that in the
+  last paste, this would have been one look rather than a guess. 455 checks.

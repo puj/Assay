@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.26.2
+// @version      0.26.3
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -250,7 +250,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.26.2';
+  var VERSION = '0.26.3';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2209,7 +2209,7 @@
   function textOf(el) {
     var t = (el.innerText || '').replace(/\u00a0/g, ' ').trim();
     // The screen-reader label is not part of what was said.
-    t = t.replace(/^(you|chatgpt|assistant|[a-z0-9][a-z0-9 ._-]{0,30}) said:?\s*/i, '');
+    t = unlabel(t);
     // innerText stops at an editing block's boundary, so a card rendered into a
     // textarea reads as empty. Its value is the text that is on the screen.
     if (el.querySelectorAll) {
@@ -2329,11 +2329,14 @@
   // chatgpt.com labels every turn for screen readers — "You said:" and
   // "ChatGPT said:" in a hidden heading just before the message — and has done
   // so through every rename of its attributes. A page with none of the named
-  // attributes still has these. The turn is the label's nearest wrapper that
-  // holds more than the label and no other label; where the labels and the
-  // messages sit side by side under one wrapper, the message is the label's
-  // next sibling.
+  // attributes still has these. A label's turn is the highest wrapper that
+  // holds this label and no other, when that wrapper holds more than the
+  // label. When it does not — the label sits in a wrapper of its own and the
+  // message follows as a sibling — the turn is the widest of the siblings
+  // between it and the next label. A label with no message is not a turn.
   var SAID_RE = /^(you|chatgpt|assistant|[a-z0-9][a-z0-9 ._-]{0,30}) said:?$/i;
+  var LABEL_PREFIX = /^(you|chatgpt|assistant|[a-z0-9][a-z0-9 ._-]{0,30}) said:?\s*/i;
+  function unlabel(t) { return (t || '').replace(LABEL_PREFIX, ''); }
   var saidRole = (typeof WeakMap === 'function') ? new WeakMap() : { get: function () {}, set: function () {} };
   function saidHeadings() {
     var out = [], hs = document.querySelectorAll('h1,h2,h3,h4,h5,h6,[class*="sr-only"],[class*="visually-hidden"]');
@@ -2346,26 +2349,23 @@
     }
     return out;
   }
+  function turnOfLabel(h, prev, next) {
+    var hl = normText(h.textContent).length, A = h, p;
+    while ((p = A.parentElement) && p !== document.body && p.tagName !== 'MAIN' &&
+           !(prev && p.contains(prev)) && !(next && p.contains(next))) A = p;
+    if (normText(A.textContent).length - hl >= BLOCK_MIN) return A;
+    var best = null, bestLen = 0;
+    for (var sib = A.nextElementSibling; sib && !(next && sib.contains(next)); sib = sib.nextElementSibling) {
+      if (host.contains(sib) || (sib.closest && sib.closest(EDITABLE_SEL))) continue;
+      var len = normText(sib.textContent).length;
+      if (len >= BLOCK_MIN && len > bestLen) { best = sib; bestLen = len; }
+    }
+    return best;
+  }
   function saidTurns() {
     var hs = saidHeadings(), out = [], i;
-    if (hs.length < 1) return out;
-    function holdsAnother(p, h) {
-      for (var j = 0; j < hs.length; j++) if (hs[j] !== h && p.contains(hs[j])) return true;
-      return false;
-    }
     for (i = 0; i < hs.length; i++) {
-      var h = hs[i], hl = normText(h.textContent).length, el = h, turn = null;
-      while (el.parentElement && el.parentElement !== document.body) {
-        var p = el.parentElement;
-        if (holdsAnother(p, h)) {
-          // Labels and messages are siblings here: the message follows its label.
-          var sib = h.nextElementSibling;
-          turn = (sib && !host.contains(sib) && normText(sib.textContent).length >= BLOCK_MIN) ? sib : el;
-          break;
-        }
-        el = p;
-        if (normText(p.textContent).length - hl >= BLOCK_MIN) { turn = p; break; }
-      }
+      var h = hs[i], turn = turnOfLabel(h, hs[i - 1], hs[i + 1]);
       if (!turn || turn === h) continue;
       if (turn.closest && turn.closest(EDITABLE_SEL)) continue;
       saidRole.set(turn, /^you\b/i.test(normText(h.textContent)));
@@ -2508,7 +2508,7 @@
       var tl = (el.textContent || '').length, kids = el.childElementCount;
       var seen = textCache.get(el);
       if (!seen || seen.tl !== tl || seen.kids !== kids) {
-        var norm = normText(el.innerText || '');
+        var norm = unlabel(normText(el.innerText || ''));
         // `head` comes from innerText because it is what the message looks
         // like, and it is only ever shown to you. It must never be used to
         // recognise a message: innerText is what the page *renders*, so for a
@@ -3352,7 +3352,10 @@
           .map(function (k) { return k + '=' + f.census[k]; }).join(' '));
         if (f.census.labels) lines.push('  labels: ' + f.census.labels.join(' | '));
         if (f.census.testids) lines.push('  testids: ' + f.census.testids.join(' '));
-        if (f.census.labelPath) lines.push('  first label: ' + f.census.labelPath);
+        (f.census.labelTurns || []).forEach(function (lt) {
+          lines.push('  label: ' + lt.label);
+          lines.push('    turn: ' + lt.turn);
+        });
         if (f.census.markdownPath) lines.push('  first markdown: ' + f.census.markdownPath);
       }
       if (f.sample && f.sample.length) lines.push('page shape: ' + f.sample.join('  '));
@@ -3919,7 +3922,7 @@
       out.roles = live.slice(0, 6).map(function (t) { return t.role; });
       out.heads = live.slice(0, 3).map(function (t) { return t.head; });
       var named = out.strategies.some(function (st) { return st.n > 0; });
-      if (!live.length || !named) {
+      {
         // Nothing found by name: describe what the page actually has, so the
         // next version can be aimed rather than guessed. Counts of the marks a
         // thread has carried at one time or another, the hidden labels, the
@@ -3956,12 +3959,22 @@
             }
             return parts.join(' < ');
           }
-          var firstLabel = saidHeadings()[0];
-          if (firstLabel) out.census.labelPath = pathOf(firstLabel);
+          // The first label of each side, where the finder put its turn, and
+          // how much text that turn holds — the one thing a paste has to say
+          // when the label finder is the one that answered.
+          var hs = saidHeadings(), shown = {};
+          out.census.labelTurns = [];
+          for (var li = 0; li < hs.length && out.census.labelTurns.length < 2; li++) {
+            var side = /^you\b/i.test(normText(hs[li].textContent)) ? 'you' : 'them';
+            if (shown[side]) continue;
+            shown[side] = true;
+            var tn = turnOfLabel(hs[li], hs[li - 1], hs[li + 1]);
+            out.census.labelTurns.push({ label: pathOf(hs[li]), turn: tn ? pathOf(tn) : 'none' });
+          }
           var md = document.querySelector('main [class*="markdown"], [class*="markdown"]');
           if (md) out.census.markdownPath = pathOf(md);
         } catch (e) { out.census.err = e.message; }
-        var root = document.querySelector('main') || document.body;
+        var root = (!live.length || !named) ? (document.querySelector('main') || document.body) : null;
         var seen = {}, all = root ? root.querySelectorAll('*') : [];
         for (var i = 0; i < all.length && i < 4000; i++) {
           var el = all[i];
