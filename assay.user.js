@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.26.5
+// @version      0.27.0
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.26.5';
+  var VERSION = '0.27.0';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -1411,22 +1411,16 @@
         var b2 = blockAt(pending.blocks, off);
         var w = b2 && wordAt(b2.words, off);
         if (w) {
-          // Growing is for the passage in hand: the paragraph you are in, or
-          // the one against it. A tap further off is a different passage, so
-          // it starts a new selection there rather than dragging the
-          // highlight across everything in between. Reaching a paragraph
-          // beyond the next one is a tap at a time.
-          var bi = pending.blocks.indexOf(b2);
-          var lo = pending.blocks.indexOf(blockAt(pending.blocks, pending.start));
-          var hi = pending.blocks.indexOf(blockAt(pending.blocks, Math.max(pending.start, pending.end - 1)));
-          if (bi >= lo - 1 && bi <= hi + 1) {
-            if (off >= pending.end) pending.end = Math.max(pending.end, w.end);
-            else pending.start = Math.min(pending.start, w.start);
-            pending.scope = 'custom';
-          } else if (!beginPending(container, pending.blocks, off)) {
-            clearPending();
-            return;
-          }
+          // A tap on any other word of the same message grows the selection
+          // to reach it, across every paragraph in between: the passage you
+          // want is often an argument that runs over several. Growth used to
+          // stop at the neighbouring paragraph, on the theory that a tap
+          // further off meant a different passage; in use it meant a tap at
+          // a time to cross a reply. A different passage is a tap on a
+          // different message, or ✕ on the bar.
+          if (off >= pending.end) pending.end = Math.max(pending.end, w.end);
+          else pending.start = Math.min(pending.start, w.start);
+          pending.scope = 'custom';
           redraw();
           return;
         }
@@ -1816,7 +1810,7 @@
       var empty = document.createElement('div');
       empty.className = 'empty';
       empty.textContent = 'Nothing collected here yet. Tap a word in the ' + READ_NOUN +
-        ' — tap the highlight to widen it (word → sentence → paragraph), tap nearby words to grow it — or long-press to select any span.';
+        ' — tap the highlight to widen it (word → sentence → paragraph), tap any other word in the reply to grow it across paragraphs — or long-press to select any span.';
       var backup = loadBackup();
       if (backup && backup.length) {
         empty.appendChild(document.createElement('br'));
@@ -3572,13 +3566,19 @@
       var w = wordAt(words, rel);
       return padSelect(w ? { start: para.start + w.start, end: para.start + w.end, scope: 'word' } : null);
     }
+    // A dragged selection can span paragraphs; the cycle then widens each
+    // end within its own paragraph, and the paragraph step takes them all.
+    var p0 = padPara(padSel.start), p1 = padPara(Math.max(padSel.start, padSel.end - 1));
     if (padSel.scope === 'word') {
-      var sents = segmentSentences(para.text);
-      var sb = sentenceBounds(sents, padSel.start - para.start, padSel.end - para.start);
-      return padSelect(sb ? { start: para.start + sb.start, end: para.start + sb.end, scope: 'sentence' } : null);
+      var s0 = sentenceBounds(segmentSentences(p0.text), padSel.start - p0.start, Math.min(padSel.end, p0.end) - p0.start);
+      var s1 = sentenceBounds(segmentSentences(p1.text), Math.max(padSel.start, p1.start) - p1.start, padSel.end - p1.start);
+      if (!s0 || !s1) return padSelect(null);
+      var ns = p0.start + s0.start, ne = p1.start + s1.end;
+      if (ns === padSel.start && ne === padSel.end) return padSelect({ start: p0.start, end: p1.end, scope: 'paragraph' });
+      return padSelect({ start: ns, end: ne, scope: 'sentence' });
     }
     if (padSel.scope === 'sentence') {
-      return padSelect({ start: para.start, end: para.end, scope: 'paragraph' });
+      return padSelect({ start: p0.start, end: p1.end, scope: 'paragraph' });
     }
     padSelect(null);
   }

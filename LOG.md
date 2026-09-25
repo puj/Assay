@@ -650,3 +650,17 @@ Append only. Never edit an entry after the fact.
   styles and whether scrollIntoView moves it. A doubled message id reads as
   one. A mock whose container ignores scrollTop, scrolls by scrollIntoView and
   empties far turns to spacers: 40 of 40, in order. 476 checks.
+- **2026-09-25** — 0.27.0. Selections cross paragraphs. A tap on any other
+  word of the same message now grows the selection to reach it, across every
+  paragraph in between, upward or downward. Growth used to stop at the
+  neighbouring paragraph, on the theory that a tap further off meant a
+  different passage; in use it meant a tap per paragraph to cross a reply,
+  and the passage wanted is often an argument that runs over several. A
+  different passage is a tap on a different message, or ✕ on the bar. The
+  scope cycle already handled a span: tap inside to widen each end to its
+  sentence, again for every paragraph touched, again back to the first word.
+  The scratchpad's cycle does the same over a selection dragged across its
+  paragraphs. The empty-state hint says so. One thing learned writing the
+  test: the verb bar sits above a selection and covers what is there, and a
+  finger a few pixels from it is snapped onto its buttons — a tap meant for a
+  paragraph under the bar collects instead. Worth watching. 487 checks.
