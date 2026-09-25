@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.27.0
+// @version      0.27.1
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.27.0';
+  var VERSION = '0.27.1';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -581,12 +581,30 @@
       height: vv.height
     };
   }
+  // A pinch-zoom fires viewport events many times a frame. Each used to
+  // write a style and then read a size, and a read after a write is a full
+  // layout of the page — on a long thread, tens of milliseconds, many times
+  // a frame, for the whole zoom. Now: one pass per frame, every read before
+  // any write, and a write only when the value has changed.
+  var perf = { syncs: 0, highlightSets: 0, barMoves: 0, redraws: 0 };
+  function setStyle(el, prop, val) {
+    if (el.style[prop] !== val) el.style[prop] = val;
+  }
+  var syncScheduled = false;
   function syncViewport() {
-    var ins = viewportInsets();
-    sheet.style.bottom = ins.bottom + 'px';
-    sheet.style.maxHeight = Math.round(ins.height * 0.7) + 'px';
-    if (notebox.classList.contains('show')) placeNotebox();
-    positionPill();
+    if (syncScheduled) return;
+    syncScheduled = true;
+    requestAnimationFrame(function () {
+      syncScheduled = false;
+      perf.syncs++;
+      var ins = viewportInsets();
+      var noteUp = notebox.classList.contains('show');
+      var pos = pillPlacement(ins);                  // reads
+      setStyle(sheet, 'bottom', ins.bottom + 'px');  // writes
+      setStyle(sheet, 'maxHeight', Math.round(ins.height * 0.7) + 'px');
+      if (noteUp) placeNotebox();
+      applyPillPlacement(pos);
+    });
   }
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', syncViewport);
@@ -601,23 +619,31 @@
   var PILL_KEY = 'assay.pill.v1';
   var pillPos = loadJSON(PILL_KEY, null);
   var compactPill = loadJSON(PILL_KEY, {}).compact === true;
-  function positionPill() {
-    var ins = viewportInsets();
+  function pillPlacement(ins) {
     var w = pill.offsetWidth || 90, h = pill.offsetHeight || 46;
     var bottom = pillPos && typeof pillPos.bottom === 'number' ? pillPos.bottom : 110;
     bottom = Math.max(4, Math.min(bottom, ins.height - h - 4));
     if (sheetOpen && sheet.classList.contains('show')) {
       bottom = Math.max(bottom, sheet.offsetHeight + 12);
     }
+    var out = { bottom: (ins.bottom + bottom) + 'px' };
     if (pillPos && typeof pillPos.left === 'number') {
-      pill.style.left = Math.max(4, Math.min(pillPos.left, window.innerWidth - w - 4)) + 'px';
-      pill.style.right = 'auto';
+      out.left = Math.max(4, Math.min(pillPos.left, window.innerWidth - w - 4)) + 'px';
+      out.right = 'auto';
     } else {
       var right = pillPos && typeof pillPos.right === 'number' ? pillPos.right : 12;
-      pill.style.right = Math.max(4, Math.min(right, window.innerWidth - w - 4)) + 'px';
-      pill.style.left = 'auto';
+      out.right = Math.max(4, Math.min(right, window.innerWidth - w - 4)) + 'px';
+      out.left = 'auto';
     }
-    pill.style.bottom = (ins.bottom + bottom) + 'px';
+    return out;
+  }
+  function applyPillPlacement(pos) {
+    setStyle(pill, 'left', pos.left);
+    setStyle(pill, 'right', pos.right);
+    setStyle(pill, 'bottom', pos.bottom);
+  }
+  function positionPill() {
+    applyPillPlacement(pillPlacement(viewportInsets()));
   }
   function savePill() {
     var o = { compact: compactPill };
@@ -974,6 +1000,7 @@
   }
   function applyHighlights(groups) {
     installHighlightStyles();
+    perf.highlightSets++;
     var k;
     for (k in groups) {
       if (!groups.hasOwnProperty(k)) continue;
@@ -1055,8 +1082,9 @@
     var top = rects[0].top - gap - bh;
     if (top < ins.top + 8) top = last.bottom + gap;
     if (top + bh > vh - ins.bottom - 8) top = Math.max(ins.top + 8, rects[0].top - gap - bh);
-    bar.style.left = left + 'px';
-    bar.style.top = top + 'px';
+    perf.barMoves++;
+    setStyle(bar, 'left', left + 'px');
+    setStyle(bar, 'top', top + 'px');
   }
 
   function redraw() {
@@ -1090,7 +1118,13 @@
   // The same work, with the painting handed to the browser: no rects are
   // measured for a mark at all, so this costs nothing a scroll could be waiting
   // on. Only the bar needs to know where it is, and only while it is up.
+  // What the bar is following, kept from the last full redraw so that a
+  // scroll can move the bar without ranging every mark again: a Range is
+  // live, its rects follow the text.
+  var barFollow = null;
   function redrawNative() {
+    perf.redraws++;
+    barFollow = null;
     var groups = {}, editRange = null, editMark = null;
     function put(key, range) { (groups[key] || (groups[key] = [])).push(range); }
     marks = marks.filter(function (m) {
@@ -1105,6 +1139,7 @@
     if (editing && !editMark) { editing = null; paintBar(); }
     if (editing) {
       applyHighlights(groups);
+      barFollow = { blocks: editMark.blocks, off: editMark.start, range: editRange };
       placeBar(editMark.blocks, editMark.start, editRange.getClientRects());
       return;
     }
@@ -1123,7 +1158,19 @@
     }
     put('on-' + nextColorIdx(), pr);
     applyHighlights(groups);
+    barFollow = { blocks: pending.blocks, off: pending.start, range: pr };
     placeBar(pending.blocks, pending.start, prRects);
+  }
+  // The scroll-time path. Nothing about the highlights changes when the page
+  // scrolls — the browser paints them where the text is — so only the bar
+  // has to move, and it follows the live range from the last full redraw.
+  // Anything that range can no longer describe gets the full redraw.
+  function followBar() {
+    if (!NATIVE_HL || !barFollow) return redraw();
+    var rects = null;
+    try { rects = barFollow.range.getClientRects(); } catch (e) {}
+    if (!rects || !rects.length) return redraw();
+    placeBar(barFollow.blocks, barFollow.off, rects);
   }
 
   function placeNotebox() {
@@ -1678,7 +1725,7 @@
     redrawScheduled = true;
     requestAnimationFrame(function () {
       redrawScheduled = false;
-      redraw();
+      followBar();
     });
   }
   // Where the browser paints the highlights, a scroll with nothing but marks on
@@ -3974,6 +4021,7 @@
         fragments: fragments.map(function (f) { return { text: f.text, note: f.note, notePos: f.notePos, verb: f.verb, colorIdx: f.colorIdx }; }),
         marks: marks.length,
         highlights: paintedCount(),
+        perf: { syncs: perf.syncs, highlightSets: perf.highlightSets, barMoves: perf.barMoves, redraws: perf.redraws },
         exportMd: buildConversationMarkdown(getConversation()),
         exportTxt: buildConversationText(getConversation())
       };

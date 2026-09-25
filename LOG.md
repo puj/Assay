@@ -664,3 +664,16 @@ Append only. Never edit an entry after the fact.
   test: the verb bar sits above a selection and covers what is there, and a
   finger a few pixels from it is snapped onto its buttons — a tap meant for a
   paragraph under the bar collects instead. Worth watching. 487 checks.
+- **2026-09-25** — 0.27.1. Pinch-zoom was slow. A pinch fires viewport
+  resize and scroll events many times a frame, and each one ran the viewport
+  sync straight away: a style write on the sheet, then a size read on the
+  button, and a read after a write is a full layout of the page — on a long
+  thread tens of milliseconds, several times a frame, for the whole zoom. Now
+  one pass per frame, every read before any write, and a write only when the
+  value changed. Found beside it: a scroll with a selection open re-ranged
+  every mark and re-registered every highlight each frame, though the browser
+  paints highlights where the text is without any help; a scroll now only
+  moves the bar, following the live Range from the last full redraw. A perf
+  test dispatches 600 viewport events in a tick and sees one pass, and forty
+  scroll frames with twenty marks and a selection open and sees forty bar
+  moves and nothing else. 495 checks.
