@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.26.3
+// @version      0.26.4
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -250,7 +250,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.26.3';
+  var VERSION = '0.26.4';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2208,6 +2208,11 @@
   // -------------------------------------------- whole-conversation capture
   function textOf(el) {
     var t = (el.innerText || '').replace(/\u00a0/g, ' ').trim();
+    // A message the page has skipped rendering — content-visibility, a list
+    // that draws only what is near the screen — has its words in the document
+    // and none of them in innerText. Take what is in the document then.
+    var tc = (el.textContent || '').replace(/\u00a0/g, ' ').trim();
+    if (tc.length > 40 && t.length * 2 < tc.length) t = tc.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n');
     // The screen-reader label is not part of what was said.
     t = unlabel(t);
     // innerText stops at an editing block's boundary, so a card rendered into a
@@ -2437,6 +2442,17 @@
     return out;
   }
 
+  // What the site itself calls this message, if it says. chatgpt.com has
+  // called it data-message-id, then data-turn-id, and now writes it on a
+  // search-unit wrapper inside the turn as data-chatgpt-search-message-ids.
+  function turnIdOf(el) {
+    if (!el.getAttribute) return '';
+    var own = el.getAttribute('data-message-id') || el.getAttribute('data-turn-id');
+    if (own) return own;
+    var units = el.querySelectorAll('[data-chatgpt-search-message-ids]');
+    if (units.length === 1) return units[0].getAttribute('data-chatgpt-search-message-ids') || '';
+    return '';
+  }
   // The messages the page is rendering right now, in order.
   //
   // The strategies are scored, not tried in turn until one hits. Taking the
@@ -2532,7 +2548,7 @@
       return {
         el: el,
         role: finder.user(el) ? 'You' : 'Assistant',
-        id: (el.getAttribute && (el.getAttribute('data-message-id') || el.getAttribute('data-turn-id'))) || '',
+        id: turnIdOf(el),
         turnNo: turnNumberOf(el),
         head: seen.head, len: seen.len, sig: seen.sig
       };
@@ -2714,16 +2730,61 @@
   // thread to the top, opens what is folded, reads each window on the way back
   // down, and stitches them. It blocks — there is a progress line and a Stop —
   // and when it ends nothing is left running and nothing is left stored.
-  function scrollerFor(el) {
-    var n = el;
+  function scrollsY(n) {
+    var o = '';
+    try { o = getComputedStyle(n).overflowY; } catch (e) {}
+    return (o === 'auto' || o === 'scroll' || o === 'overlay') && n.scrollHeight > n.clientHeight + 40;
+  }
+  // Set a scroll position now — not smoothly, whatever the page's own
+  // scroll-behavior says, since a walk that reads 180ms after asking for a
+  // position needs the position, not the start of an animation towards it.
+  function setTop(n, y) {
+    try { if (n.scrollTo) { n.scrollTo({ top: y, behavior: 'instant' }); return; } } catch (e) {}
+    n.scrollTop = y;
+  }
+  // Does assigning to this element's scrollTop change it? A page can hand
+  // the walk an element that reports a scroll range and refuses to move —
+  // then every window is read from the same place and nothing on the screen
+  // stirs, which is what a walk that "did not scroll" looks like.
+  function moves(n) {
+    var was = n.scrollTop, to = was > 0 ? was - 1 : 1, ok = false;
+    try { setTop(n, to); ok = n.scrollTop !== was; setTop(n, was); } catch (e) {}
+    return ok;
+  }
+  function describeEl(n) {
+    if (!n) return 'none';
+    if (n === document.scrollingElement || n === document.documentElement) return 'document';
+    var cls = ((n.className && n.className.indexOf ? n.className : '') + '').split(/\s+/).filter(Boolean).slice(0, 3).join('.');
+    return n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (cls ? '.' + cls : '') +
+      ' ' + n.scrollHeight + '/' + n.clientHeight;
+  }
+  // Every element on the page that could be the thread's scroller, largest
+  // first: the ancestors of a message, the document, and anything else that
+  // scrolls and is more than a strip. Told apart by whether they move.
+  function scrollerCandidates(el) {
+    var out = [], n = el;
     while (n && n !== document.body && n !== document.documentElement) {
-      var o = '';
-      try { o = getComputedStyle(n).overflowY; } catch (e) {}
-      if ((o === 'auto' || o === 'scroll' || o === 'overlay') && n.scrollHeight > n.clientHeight + 40) return n;
+      if (scrollsY(n) && out.indexOf(n) < 0) out.push(n);
       n = n.parentElement;
     }
     var de = document.scrollingElement || document.documentElement;
-    return (de && de.scrollHeight > de.clientHeight + 40) ? de : null;
+    if (de && de.scrollHeight > de.clientHeight + 40 && out.indexOf(de) < 0) out.push(de);
+    var all = document.querySelectorAll('div,main,section');
+    for (var i = 0; i < all.length; i++) {
+      var c = all[i];
+      if (host.contains(c) || c.clientHeight < 200 || out.indexOf(c) >= 0) continue;
+      if (scrollsY(c)) out.push(c);
+    }
+    return out;
+  }
+  var lastScrollers = null;      // what the last walk had to choose from, for the diagnosis
+  function scrollerFor(el) {
+    var cands = scrollerCandidates(el), pick = null, i;
+    lastScrollers = cands.map(function (c) { return describeEl(c) + (c.contains(el) ? ' holds-thread' : ''); });
+    for (i = 0; i < cands.length && !pick; i++) if (moves(cands[i])) pick = cands[i];
+    if (!pick && cands.length) pick = cands[0];
+    lastScrollers.picked = pick ? describeEl(pick) + (moves(pick) ? ' (moves)' : ' (does not move)') : 'none';
+    return pick;
   }
 
   // Opening what the site folded. Only inside a message, only controls that
@@ -2904,7 +2965,8 @@
       var sc = scrollerFor(first.el);
       if (!sc) return resolve(finish(windowTurns()));   // nothing scrolls; this is all of it
       var began = Date.now(), startTop = sc.scrollTop;
-      var walk = { top: [], windows: [], passes: 0, stopped: false, dialogs: 0 };
+      var walk = { top: [], windows: [], passes: 0, stopped: false, dialogs: 0,
+        scroller: lastScrollers ? lastScrollers.picked : describeEl(sc), moved: [] };
       dialogsClosed = 0;
       lastWalk = walk;
       function spent() { return harvestStop || Date.now() - began > HARVEST_MS; }
@@ -2929,7 +2991,7 @@
         // it was put in order — the two differed, and the trace was read as
         // the export.
         walk.final = out.map(label);
-        sc.scrollTop = startTop;                     // put the page back where it was
+        setTop(sc, startTop);                        // put the page back where it was
         resolve(out);
       }
       // On a page that numbers its turns and keeps the last of them in view at
@@ -2959,9 +3021,9 @@
       var quiet = 0, last = '';
       function up(nudge) {
         if (spent()) return expandDown(0);
-        sc.scrollTop = nudge ? 40 : 0;
+        setTop(sc, nudge ? 40 : 0);
         setTimeout(function () {
-          sc.scrollTop = 0;
+          setTop(sc, 0);
           setTimeout(function () {
             var snap = snapshot();
             if (sc.scrollTop <= 2 && snap === last) quiet += 500; else quiet = 0;
@@ -2978,7 +3040,7 @@
       // pass: opening a message changes its text, and identity must never be
       // taken from text that is still changing.
       function expandDown(pos) {
-        sc.scrollTop = pos;
+        setTop(sc, pos);
         setTimeout(function () {
           var opened = 0;
           try { opened = expandOnce(); } catch (e) {}
@@ -2996,8 +3058,10 @@
         var acc = [], at = {}, before = null;
         walk.passes++;
         function at_(pos) {
-          sc.scrollTop = pos;
+          setTop(sc, pos);
           setTimeout(function () {
+            // Where the scroll actually went, against where it was sent.
+            if (walk.moved.length < 4) walk.moved.push(Math.round(pos) + '→' + Math.round(sc.scrollTop));
             // The top is remembered as it looks from the top, once the scroll
             // has settled there — not as it looked from wherever the opening
             // pass left off, which on a page that builds only what is near
@@ -3016,7 +3080,7 @@
               return at_(bottom);
             }
             if (spent() || pos >= bottom - 2) {
-              sc.scrollTop = 0;
+              setTop(sc, 0);
               setTimeout(function () {
                 if (!spent() && snapshot() !== before && attempt < 2) return capture(attempt + 1);
                 finishWith(acc);
@@ -3340,6 +3404,7 @@
       if (f.walk) {
         lines.push('last walk: ' + f.walk.passes + ' pass(es), ' + f.walk.windows + ' windows' +
           (f.walk.stopped ? ', stopped' : ''));
+        lines.push('  scrolled: ' + f.walk.scroller + ' | sent→got: ' + (f.walk.moved || []).join(' '));
         lines.push('  top settled on: ' + f.walk.top.join(' / '));
         lines.push('  first windows: ' + JSON.stringify(f.walk.first3));
         lines.push('  last windows: ' + JSON.stringify(f.walk.last2));
@@ -3357,6 +3422,7 @@
           lines.push('    turn: ' + lt.turn);
         });
         if (f.census.markdownPath) lines.push('  first markdown: ' + f.census.markdownPath);
+        if (f.census.scrollers) lines.push('  scrollers: ' + f.census.scrollers.join(' | '));
       }
       if (f.sample && f.sample.length) lines.push('page shape: ' + f.sample.join('  '));
       lines.push('cards: ' + (flatCards ? 'text' : 'editable'));
@@ -3902,6 +3968,7 @@
           passes: lastWalk.passes, stopped: lastWalk.stopped, dialogs: lastWalk.dialogs,
           top: lastWalk.top.slice(-6), windows: lastWalk.windows.length,
           first3: lastWalk.windows.slice(0, 3), last2: lastWalk.windows.slice(-2),
+          scroller: lastWalk.scroller, moved: lastWalk.moved,
           final: lastWalk.final
         } : null,
         runtime: IN_EXTENSION ? 'extension' : 'userscript/page',
@@ -3930,7 +3997,8 @@
         // markdown block.
         out.census = {};
         ['article', '[data-turn]', '[data-turn-id]', '[data-message-id]', '[data-message-author-role]',
-         '[class*="markdown"]', '[class*="prose"]', 'main', '[role="presentation"]', '[data-testid]'].forEach(function (q) {
+         '[class*="markdown"]', '[class*="prose"]', 'main', '[role="presentation"]', '[data-testid]',
+         '[data-turn-key]', '[data-virtualized-turn-content]', '[data-chatgpt-search-message-ids]', '[data-conversation-role]'].forEach(function (q) {
           try { out.census[q] = document.querySelectorAll(q).length; } catch (e) { out.census[q] = -1; }
         });
         try {
@@ -3973,6 +4041,14 @@
           }
           var md = document.querySelector('main [class*="markdown"], [class*="markdown"]');
           if (md) out.census.markdownPath = pathOf(md);
+          // What the walk would scroll, and whether each candidate moves.
+          var f0 = live[0] && live[0].el;
+          if (f0) {
+            var cands = scrollerCandidates(f0);
+            out.census.scrollers = cands.slice(0, 6).map(function (c) {
+              return describeEl(c) + (c.contains(f0) ? ' holds-thread' : '') + (moves(c) ? ' moves' : ' stuck');
+            });
+          }
         } catch (e) { out.census.err = e.message; }
         var root = (!live.length || !named) ? (document.querySelector('main') || document.body) : null;
         var seen = {}, all = root ? root.querySelectorAll('*') : [];

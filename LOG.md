@@ -614,3 +614,21 @@ Append only. Never edit an entry after the fact.
   runs on every page, and names, for the first label of each side, where the
   finder put its turn and how much text that turn holds — with that in the
   last paste, this would have been one look rather than a guess. 455 checks.
+- **2026-09-25** — 0.26.4. The finder is right now: ten turns, alternating,
+  real text, and the first census of the new chatgpt.com — one wrapper per
+  exchange carrying `data-turn-key` and content-visibility, the human's label
+  a bare h4, the assistant's inside a search-unit wrapper that carries the
+  message id. What the paste could not say was what the walk scrolled, and
+  "no perceived scroll" twice running says something was not moving. So: the
+  walk's scroller is now chosen by proof, not by looks — every candidate
+  (the message's scrolling ancestors, the document, anything else that scrolls
+  and is more than a strip) is asked to move one pixel, and the first that
+  does is the one — and every scroll goes through scrollTo with behavior
+  instant, since a page that animates its scrolls hands a walk that reads
+  180ms later the start of an animation. The trace now names the scroller and
+  logs where the first four scrolls were sent against where they landed; the
+  census lists every candidate and whether it moves. Identity now also reads
+  `data-chatgpt-search-message-ids`. A message the page skipped rendering has
+  no innerText, so textOf falls back to what is in the document. New mock of
+  the new layout, document-scrolled with smooth behaviour and a decoy inner
+  scroller. 467 checks.
