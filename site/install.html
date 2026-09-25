@@ -227,7 +227,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.26.0
+// @version      0.26.1
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -250,7 +250,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.26.0';
+  var VERSION = '0.26.1';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2671,9 +2671,35 @@
   // say they unfold something, and never anything that could send, delete or
   // navigate — a harvest that posts a message would be unforgivable.
   var EXPAND_RE = /\b(show|see|read|view)\s+(more|all|full|original|the rest)\b|\bcontinue reading\b|\bexpand\b|\bshow full\b/i;
-  var EXPAND_NEVER = /\b(send|submit|delete|remove|retry|regenerate|stop|share|copy|edit|branch|fork|report|sign|log ?out|upgrade)\b/i;
+  // Viewers are not folds. "Expand table" on chatgpt.com opens the table in a
+  // dialog over the thread — the rows were in the message all along — and the
+  // dialog locks the thread's scroll, so a walk that opened one stopped there.
+  var EXPAND_NEVER = /\b(send|submit|delete|remove|retry|regenerate|stop|share|copy|edit|branch|fork|report|sign|log ?out|upgrade|table|image|chart|code|canvas|diagram|artifact|preview|full ?screen|zoom|enlarge|download|open in)\b/i;
+  function dialogsOpen() {
+    var n = 0, ds = document.querySelectorAll('[role="dialog"],dialog[open]');
+    for (var i = 0; i < ds.length; i++) if (!host.contains(ds[i])) n++;
+    return n;
+  }
+  // A click that opened a dialog opened something that was not a fold; close
+  // it, or the walk reads a locked thread.
+  function closeDialog() {
+    var ds = document.querySelectorAll('[role="dialog"],dialog[open]'), i, j;
+    for (i = 0; i < ds.length; i++) {
+      if (host.contains(ds[i])) continue;
+      var btns = ds[i].querySelectorAll('button,[role="button"]');
+      for (j = 0; j < btns.length; j++) {
+        var l = ((btns[j].getAttribute('aria-label') || '') + ' ' + (btns[j].textContent || '')).trim();
+        if (/^(close|dismiss|done|×|✕|✖)$/i.test(l) || /\b(close|dismiss)\b/i.test(l)) { try { btns[j].click(); } catch (e) {} break; }
+      }
+    }
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+    } catch (e) {}
+  }
+  var dialogsClosed = 0;
   function expandOnce() {
-    var opened = 0, turns = liveTurns(), i, j;
+    var opened = 0, turns = liveTurns(), i, j, before = dialogsOpen();
     for (i = 0; i < turns.length; i++) {
       var el = turns[i].el;
       // <details> opens without a click, which is the safest way to open it.
@@ -2694,6 +2720,7 @@
         if (EXPAND_NEVER.test(label)) continue;
         b.setAttribute('data-assay-exp', '1');         // once each, whatever happens
         try { b.click(); opened++; } catch (e) {}
+        if (dialogsOpen() > before) { closeDialog(); dialogsClosed++; opened--; }
       }
     }
     return opened;
@@ -2818,7 +2845,8 @@
       var sc = scrollerFor(first.el);
       if (!sc) return resolve(finish(windowTurns()));   // nothing scrolls; this is all of it
       var began = Date.now(), startTop = sc.scrollTop;
-      var walk = { top: [], windows: [], passes: 0, stopped: false };
+      var walk = { top: [], windows: [], passes: 0, stopped: false, dialogs: 0 };
+      dialogsClosed = 0;
       lastWalk = walk;
       function spent() { return harvestStop || Date.now() - began > HARVEST_MS; }
       function step() { return Math.max(120, sc.clientHeight * 0.7); }
@@ -2836,6 +2864,7 @@
       function label(t) { return t.turnNo >= 0 ? t.turnNo : (t.id || t.head.slice(0, 12)); }
       function finishWith(acc) {
         walk.stopped = harvestStop;
+        walk.dialogs = dialogsClosed;
         var out = finish(acc);
         // The trace records what the export is, not what the walk held before
         // it was put in order — the two differed, and the trace was read as
@@ -3800,7 +3829,7 @@
       var out = {
         strategies: [], structural: 0, found: 0, sample: [],
         walk: lastWalk ? {
-          passes: lastWalk.passes, stopped: lastWalk.stopped,
+          passes: lastWalk.passes, stopped: lastWalk.stopped, dialogs: lastWalk.dialogs,
           top: lastWalk.top.slice(-6), windows: lastWalk.windows.length,
           first3: lastWalk.windows.slice(0, 3), last2: lastWalk.windows.slice(-2),
           final: lastWalk.final

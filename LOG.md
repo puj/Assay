@@ -572,3 +572,13 @@ Append only. Never edit an entry after the fact.
   on the sheet's header. In settings, "Button: full / compact": compact is a
   46px round badge showing the count, or an A when nothing is collected. Off
   by default. 407 checks.
+- **2026-09-25** — 0.26.1. The walk was opening chatgpt.com's "Expand table".
+  The label rule matched the bare word "expand"; that button opens the table in
+  a dialog over the thread, nothing closes it, and the locked thread behind it
+  made the walk think it had reached the bottom. Viewers are not folds: table,
+  image, chart, code, canvas, diagram, artifact, preview, fullscreen, zoom,
+  enlarge, download and "open in" now never get clicked. And a safety net for
+  the viewer nobody has named yet: any click in the opening pass that raises a
+  dialog gets that dialog closed again — its Close button, then Escape — and
+  the count goes into the walk trace. The ChatGPT mock grew both kinds of
+  viewer. 410 checks.
