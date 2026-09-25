@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.26.1
+// @version      0.26.2
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.26.1';
+  var VERSION = '0.26.2';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -1982,6 +1982,8 @@
   // -------------------------------------------- whole-conversation capture
   function textOf(el) {
     var t = (el.innerText || '').replace(/\u00a0/g, ' ').trim();
+    // The screen-reader label is not part of what was said.
+    t = t.replace(/^(you|chatgpt|assistant|[a-z0-9][a-z0-9 ._-]{0,30}) said:?\s*/i, '');
     // innerText stops at an editing block's boundary, so a card rendered into a
     // textarea reads as empty. Its value is the text that is on the screen.
     if (el.querySelectorAll) {
@@ -2025,8 +2027,14 @@
     function walk(node) {
       if (node.nodeType !== 1 || node === host) return;
       var tag = node.tagName;
+      var cls = (node.className && node.className.indexOf ? node.className : '') + '';
+      if (/\bsr-only\b|visually-hidden/.test(cls)) return;     // said to screen readers, not to you
       var h = /^H([1-6])$/.exec(tag);
-      if (h) { pushText(new Array(+h[1] + 1).join('#') + ' ' + textOf(node)); return; }
+      if (h) {
+        var ht = textOf(node);
+        if (ht) pushText(new Array(+h[1] + 1).join('#') + ' ' + ht);
+        return;
+      }
       if (tag === 'P') { pushText(textOf(node)); return; }
       if (tag === 'PRE') {
         var code = node.querySelector('code');
@@ -2092,9 +2100,58 @@
     return !!el.querySelector('[data-testid*="user" i],[data-testid*="human" i],' +
       '[class*="font-user-message"],[class*="user-message"]');
   }
+  // chatgpt.com labels every turn for screen readers — "You said:" and
+  // "ChatGPT said:" in a hidden heading just before the message — and has done
+  // so through every rename of its attributes. A page with none of the named
+  // attributes still has these. The turn is the label's nearest wrapper that
+  // holds more than the label and no other label; where the labels and the
+  // messages sit side by side under one wrapper, the message is the label's
+  // next sibling.
+  var SAID_RE = /^(you|chatgpt|assistant|[a-z0-9][a-z0-9 ._-]{0,30}) said:?$/i;
+  var saidRole = (typeof WeakMap === 'function') ? new WeakMap() : { get: function () {}, set: function () {} };
+  function saidHeadings() {
+    var out = [], hs = document.querySelectorAll('h1,h2,h3,h4,h5,h6,[class*="sr-only"],[class*="visually-hidden"]');
+    for (var i = 0; i < hs.length; i++) {
+      var h = hs[i];
+      if (host.contains(h)) continue;
+      var t = normText(h.textContent);
+      if (t.length > 40 || !SAID_RE.test(t)) continue;
+      out.push(h);
+    }
+    return out;
+  }
+  function saidTurns() {
+    var hs = saidHeadings(), out = [], i;
+    if (hs.length < 1) return out;
+    function holdsAnother(p, h) {
+      for (var j = 0; j < hs.length; j++) if (hs[j] !== h && p.contains(hs[j])) return true;
+      return false;
+    }
+    for (i = 0; i < hs.length; i++) {
+      var h = hs[i], hl = normText(h.textContent).length, el = h, turn = null;
+      while (el.parentElement && el.parentElement !== document.body) {
+        var p = el.parentElement;
+        if (holdsAnother(p, h)) {
+          // Labels and messages are siblings here: the message follows its label.
+          var sib = h.nextElementSibling;
+          turn = (sib && !host.contains(sib) && normText(sib.textContent).length >= BLOCK_MIN) ? sib : el;
+          break;
+        }
+        el = p;
+        if (normText(p.textContent).length - hl >= BLOCK_MIN) { turn = p; break; }
+      }
+      if (!turn || turn === h) continue;
+      if (turn.closest && turn.closest(EDITABLE_SEL)) continue;
+      saidRole.set(turn, /^you\b/i.test(normText(h.textContent)));
+      if (out.indexOf(turn) < 0) out.push(turn);
+    }
+    return out;
+  }
   var CHAT_FINDERS = [
     { sel: '[data-message-author-role]',
       user: function (el) { return el.getAttribute('data-message-author-role') === 'user'; } },
+    { sel: '"You said:" / "ChatGPT said:" labels', find: saidTurns,
+      user: function (el) { return saidRole.get(el) === true; } },
     // Claude's own markup, every spelling of it we have seen. `font-claude-message`
     // became `font-claude-response`, which is exactly the kind of rename that
     // empties an export, so these are matched on a substring rather than whole.
@@ -2185,8 +2242,10 @@
     var best = null, bestScore = -1, i;
     for (i = 0; i < CHAT_FINDERS.length; i++) {
       var els;
-      try { els = Array.prototype.slice.call(document.querySelectorAll(CHAT_FINDERS[i].sel)); }
-      catch (e) { continue; }
+      try {
+        els = CHAT_FINDERS[i].find ? CHAT_FINDERS[i].find()
+          : Array.prototype.slice.call(document.querySelectorAll(CHAT_FINDERS[i].sel));
+      } catch (e) { continue; }
       els = prune(els);
       if (!els.length) continue;
       var c = { els: els, user: CHAT_FINDERS[i].user };
@@ -2247,7 +2306,7 @@
       return {
         el: el,
         role: finder.user(el) ? 'You' : 'Assistant',
-        id: (el.getAttribute && el.getAttribute('data-message-id')) || '',
+        id: (el.getAttribute && (el.getAttribute('data-message-id') || el.getAttribute('data-turn-id'))) || '',
         turnNo: turnNumberOf(el),
         head: seen.head, len: seen.len, sig: seen.sig
       };
@@ -3062,6 +3121,14 @@
       }
       f.strategies.forEach(function (st, i) { lines.push('finder ' + (i + 1) + ': ' + st.n + '  ' + st.sel.slice(0, 60)); });
       lines.push('by shape: ' + f.structural + ' | used: ' + f.found + ' | roles: ' + (f.roles || []).join(','));
+      if (f.census) {
+        lines.push('census: ' + Object.keys(f.census).filter(function (k) { return typeof f.census[k] === 'number'; })
+          .map(function (k) { return k + '=' + f.census[k]; }).join(' '));
+        if (f.census.labels) lines.push('  labels: ' + f.census.labels.join(' | '));
+        if (f.census.testids) lines.push('  testids: ' + f.census.testids.join(' '));
+        if (f.census.labelPath) lines.push('  first label: ' + f.census.labelPath);
+        if (f.census.markdownPath) lines.push('  first markdown: ' + f.census.markdownPath);
+      }
       if (f.sample && f.sample.length) lines.push('page shape: ' + f.sample.join('  '));
       lines.push('cards: ' + (flatCards ? 'text' : 'editable'));
       window.__assay._editables().forEach(function (e) {
@@ -3617,7 +3684,7 @@
       };
       CHAT_FINDERS.forEach(function (f) {
         var n = 0;
-        try { n = document.querySelectorAll(f.sel).length; } catch (e) { n = -1; }
+        try { n = f.find ? f.find().length : document.querySelectorAll(f.sel).length; } catch (e) { n = -1; }
         out.strategies.push({ sel: f.sel, n: n });
       });
       try { out.structural = structuralTurns().length; } catch (e) {}
@@ -3625,9 +3692,49 @@
       out.found = live.length;
       out.roles = live.slice(0, 6).map(function (t) { return t.role; });
       out.heads = live.slice(0, 3).map(function (t) { return t.head; });
-      if (!live.length) {
-        // Nothing found: describe what the page actually has, so the next
-        // version can be aimed rather than guessed.
+      var named = out.strategies.some(function (st) { return st.n > 0; });
+      if (!live.length || !named) {
+        // Nothing found by name: describe what the page actually has, so the
+        // next version can be aimed rather than guessed. Counts of the marks a
+        // thread has carried at one time or another, the hidden labels, the
+        // testids, and the wrappers around the first label and the first
+        // markdown block.
+        out.census = {};
+        ['article', '[data-turn]', '[data-turn-id]', '[data-message-id]', '[data-message-author-role]',
+         '[class*="markdown"]', '[class*="prose"]', 'main', '[role="presentation"]', '[data-testid]'].forEach(function (q) {
+          try { out.census[q] = document.querySelectorAll(q).length; } catch (e) { out.census[q] = -1; }
+        });
+        try {
+          out.census.labels = saidHeadings().slice(0, 8).map(function (h) { return h.tagName.toLowerCase() + ':' + normText(h.textContent); });
+          var tids = {}, te = document.querySelectorAll('[data-testid]');
+          for (var ti = 0; ti < te.length; ti++) {
+            var tv = te[ti].getAttribute('data-testid').replace(/\d+/g, 'N');
+            tids[tv] = (tids[tv] || 0) + 1;
+          }
+          out.census.testids = Object.keys(tids).sort(function (a, b) { return tids[b] - tids[a]; }).slice(0, 14)
+            .map(function (k) { return k + '×' + tids[k]; });
+          function pathOf(el) {
+            var parts = [], n = 0;
+            while (el && el !== document.body && n++ < 7) {
+              var cls = ((el.className && el.className.indexOf ? el.className : '') + '').split(/\s+/)
+                .filter(function (c) { return c && !/^(flex|grid|text-|bg-|p[xytrbl]?-|m[xytrbl]?-|w-|h-|gap-|rounded|border|absolute|relative|overflow|max-|min-|items-|justify-|@)/.test(c); })
+                .slice(0, 3).join('.');
+              var attrs = [];
+              for (var a = 0; a < el.attributes.length; a++) {
+                var nm = el.attributes[a].name;
+                if (/^data-/.test(nm)) attrs.push(nm + '=' + el.attributes[a].value.slice(0, 18));
+              }
+              parts.push(el.tagName.toLowerCase() + (cls ? '.' + cls : '') + (attrs.length ? '[' + attrs.join('][') + ']' : '') +
+                '{' + (el.textContent || '').trim().length + '}');
+              el = el.parentElement;
+            }
+            return parts.join(' < ');
+          }
+          var firstLabel = saidHeadings()[0];
+          if (firstLabel) out.census.labelPath = pathOf(firstLabel);
+          var md = document.querySelector('main [class*="markdown"], [class*="markdown"]');
+          if (md) out.census.markdownPath = pathOf(md);
+        } catch (e) { out.census.err = e.message; }
         var root = document.querySelector('main') || document.body;
         var seen = {}, all = root ? root.querySelectorAll('*') : [];
         for (var i = 0; i < all.length && i < 4000; i++) {

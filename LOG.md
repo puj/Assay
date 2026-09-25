@@ -582,3 +582,22 @@ Append only. Never edit an entry after the fact.
   dialog gets that dialog closed again — its Close button, then Escape — and
   the count goes into the walk trace. The ChatGPT mock grew both kinds of
   viewer. 410 checks.
+- **2026-09-25** — 0.26.2. A diagnosis from chatgpt.com in the Firefox
+  extension: every named finder found nothing. No `data-message-author-role`,
+  no numbered turns, no message ids. The shape fallback found four blocks, all
+  beginning "You said:", and the walk exported those four. The page had changed
+  under us: what remained was the hidden heading chatgpt.com puts before every
+  message for screen readers, "You said:" and "ChatGPT said:", which has
+  survived every rename of its attributes. A finder built on those labels now
+  sits second: the turn is the label's nearest wrapper that holds more than
+  the label and no other label, or, where labels and messages sit side by side
+  under one wrapper, the label's next sibling. That second shape is exactly
+  what the diagnosis showed — four exchange wrappers, each starting with the
+  human's label — and the mock of it reproduced the four before the finder and
+  gives eight after. The label itself no longer appears in exported text.
+  `data-turn-id` now serves as a message id where `data-message-id` is gone.
+  And the census in the diagnosis — counts of every mark a thread has carried,
+  the labels, the testids, the wrapper path around the first label and the
+  first markdown block — now runs whenever only the shape fallback found
+  anything, not only when nothing did; the last paste came without it because
+  four blocks counted as found. 429 checks.
