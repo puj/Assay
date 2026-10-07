@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Assay — deep dive for AI chats
 // @namespace    https://projectnothing.ai/assay
-// @version      0.27.2
+// @version      0.27.3
 // @description  Tap to collect, highlight and annotate passages in AI chats, then send them back as one deep-dive payload. 100% local, no API. Export .md/.txt built in. A Project Nothing experiment.
 // @author       puj
 // @homepageURL  https://assay.projectnothing.ai
@@ -24,7 +24,7 @@
   // Re-running (e.g. via bookmarklet) toggles the sheet instead of double-injecting.
   if (window.__assay) { try { window.__assay.toggle(); } catch (e) {} return; }
 
-  var VERSION = '0.27.2';
+  var VERSION = '0.27.3';
   var MAP_KEY = 'assay.byConvo.v1';
   var BACKUP_MAP_KEY = 'assay.backupByConvo.v1';
   var LEGACY_KEY = 'deepdive.fragments.v1';
@@ -2576,7 +2576,9 @@
     } catch (e) {}
   }
   function moves(n) {
-    var was = n.scrollTop, to = was > 0 ? was - 1 : 1, ok = false;
+    // A reversed scroller rests at 0 and moves only below it, so a probe
+    // that tries only upward from 0 would call it stuck.
+    var was = n.scrollTop, to = was !== 0 ? was - (was > 0 ? 1 : -1) : (reversedScroll(n) ? -1 : 1), ok = false;
     var marked = false;
     try {
       var styled = (n === document.scrollingElement || n === document.documentElement) ? document.documentElement : n;
@@ -2611,6 +2613,31 @@
       if (scrollsY(c)) out.push(c);
     }
     return out;
+  }
+  // A scroller laid out bottom-up — flex-direction: column-reverse, which is
+  // how a chat opens at its newest message without being scrolled there —
+  // counts its scrollTop from the bottom: 0 is the end of the thread, and
+  // the top is minus the range. Every positive scrollTop is clamped to 0, so
+  // a walk that sends one sees "sent 786, got 0" and never leaves the
+  // bottom. Asked of the element by trying a step below zero.
+  function reversedScroll(n) {
+    if (n === document.scrollingElement || n === document.documentElement) return false;
+    var was = n.scrollTop;
+    if (was < 0) return true;
+    if (was > 0) return false;
+    try {
+      var cs = getComputedStyle(n);
+      if (/flex/.test(cs.display) && /column-reverse/.test(cs.flexDirection)) return true;
+    } catch (e) {}
+    // The probe holds smooth scrolling off for its moment, or it would read
+    // the start of an animation and call a reversed scroller a stuck one.
+    var rev = false, sb = n.style.scrollBehavior;
+    try {
+      n.style.scrollBehavior = 'auto';
+      n.scrollTop = -1; rev = n.scrollTop < 0; n.scrollTop = was;
+    } catch (e) {}
+    n.style.scrollBehavior = sb;
+    return rev;
   }
   // The walk's scroller, as it was when the walk last worked: the nearest
   // ancestor of a message that scrolls, else the document. The probing
@@ -2804,9 +2831,17 @@
       if (!first) return resolve([]);
       var sc = scrollerFor(first.el);
       if (!sc) return resolve(finish(windowTurns()));   // nothing scrolls; this is all of it
+      // Positions are counted from the top, 0 to the range, whichever way the
+      // scroller counts its own: see reversedScroll.
+      var rev = reversedScroll(sc);
+      function range() { return sc.scrollHeight - sc.clientHeight; }
+      function getPos() { return rev ? sc.scrollTop + range() : sc.scrollTop; }
+      // A reversed scroller is new ground, so it alone gets smooth scrolling
+      // held off for the walk; the plain path stays as it was on the phone.
+      function setPos(y) { if (rev) setTop(sc, y - range()); else sc.scrollTop = y; }
       var began = Date.now(), startTop = sc.scrollTop;
       var walk = { top: [], windows: [], passes: 0, stopped: false, dialogs: 0,
-        scroller: describeEl(sc) + (moves(sc) ? ' (moves)' : ' (does not move)'), moved: [] };
+        scroller: describeEl(sc) + (rev ? ' reversed' : '') + (moves(sc) ? ' (moves)' : ' (does not move)'), moved: [] };
       lastWalk = walk;
       dialogsClosed = 0;
       function spent() { return harvestStop || Date.now() - began > HARVEST_MS; }
@@ -2832,6 +2867,7 @@
         // the export.
         walk.final = out.map(label);
         sc.scrollTop = startTop;                     // put the page back where it was
+        if (rev) restoreScrollStyle(sc);
         resolve(out);
       }
       // On a page that numbers its turns and keeps the last of them in view at
@@ -2861,12 +2897,12 @@
       var quiet = 0, last = '';
       function up(nudge) {
         if (spent()) return expandDown(0);
-        sc.scrollTop = nudge ? 40 : 0;
+        setPos(nudge ? 40 : 0);
         setTimeout(function () {
-          sc.scrollTop = 0;
+          setPos(0);
           setTimeout(function () {
             var snap = snapshot();
-            if (sc.scrollTop <= 2 && snap === last) quiet += 500; else quiet = 0;
+            if (getPos() <= 2 && snap === last) quiet += 500; else quiet = 0;
             last = snap;
             walk.top.push(snap);
             onProgress('Finding the start of the conversation…', liveTurns().length);
@@ -2880,12 +2916,12 @@
       // pass: opening a message changes its text, and identity must never be
       // taken from text that is still changing.
       function expandDown(pos) {
-        sc.scrollTop = pos;
+        setPos(pos);
         setTimeout(function () {
           var opened = 0;
           try { opened = expandOnce(); } catch (e) {}
           onProgress('Opening folded messages…', liveTurns().length);
-          var bottom = sc.scrollHeight - sc.clientHeight;
+          var bottom = range();
           if (spent() || pos >= bottom - 2) return capture(0);
           setTimeout(function () { expandDown(Math.min(bottom, pos + step())); }, opened ? 300 : 0);
         }, 200);
@@ -2898,10 +2934,10 @@
         var acc = [], at = {}, before = null;
         walk.passes++;
         function at_(pos) {
-          sc.scrollTop = pos;
+          setPos(pos);
           setTimeout(function () {
             // Where the scroll actually went, against where it was sent.
-            if (walk.moved.length < 4) walk.moved.push(Math.round(pos) + '→' + Math.round(sc.scrollTop));
+            if (walk.moved.length < 4) walk.moved.push(Math.round(pos) + '→' + Math.round(getPos()));
             // The top is remembered as it looks from the top, once the scroll
             // has settled there — not as it looked from wherever the opening
             // pass left off, which on a page that builds only what is near
@@ -2911,7 +2947,7 @@
             walk.windows.push(win.map(label));
             acc = absorb(acc, win, at);
             onProgress('Reading the conversation…', acc.length);
-            var bottom = sc.scrollHeight - sc.clientHeight;
+            var bottom = range();
             // Every numbered turn from first to last is held: one look at the
             // very bottom, to be sure nothing sits past the last number, and
             // then done.
@@ -2920,7 +2956,7 @@
               return at_(bottom);
             }
             if (spent() || pos >= bottom - 2) {
-              sc.scrollTop = 0;
+              setPos(0);
               setTimeout(function () {
                 if (!spent() && snapshot() !== before && attempt < 2) return capture(attempt + 1);
                 finishWith(acc);
@@ -3913,7 +3949,7 @@
             out.census.ua = (navigator.userAgent || '').slice(0, 90);
             var pick = cands[0];
             if (pick) {
-              var cs = getComputedStyle(pick), keys = ['overflow-y', 'overflow-x', 'scroll-behavior', 'scroll-snap-type', 'overscroll-behavior-y', 'position', 'display', 'height', 'contain', 'transform', 'will-change', 'touch-action', 'pointer-events'];
+              var cs = getComputedStyle(pick), keys = ['overflow-y', 'overflow-x', 'flex-direction', 'scroll-behavior', 'scroll-snap-type', 'overscroll-behavior-y', 'position', 'display', 'height', 'contain', 'transform', 'will-change', 'touch-action', 'pointer-events'];
               out.census.scrollerStyle = keys.map(function (k) { return k + ':' + cs.getPropertyValue(k); }).join(' ');
               out.census.scrollerParent = pick.parentElement ? describeEl(pick.parentElement) + ' ' + getComputedStyle(pick.parentElement).getPropertyValue('overflow-y') : 'none';
               // Does scrollIntoView on the second message move the container?

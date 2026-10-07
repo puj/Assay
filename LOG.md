@@ -693,3 +693,20 @@ Append only. Never edit an entry after the fact.
   whatever its overflow, with whether it moves, and the browser string. If
   the page scrolls some element that hides its overflow, that line will name
   it. 492 checks.
+- **2026-10-06** — 0.27.3. "Walk the thread doesn't work on desktop sites."
+  The 0.26.4 and 0.26.5 traces already held the answer: a container with a
+  real scroll range that takes a scrollTop and stays at zero, "sent 786, got
+  0". That is what a `flex-direction: column-reverse` scroller does — the way
+  a chat opens at its newest message without being scrolled there. Such a
+  scroller counts from the bottom: 0 is the end of the thread, the top is
+  minus the range, and every positive scrollTop is clamped to 0. So the walk
+  thought it stood at the top while sitting at the bottom, and read one
+  window. The walk now asks whether its scroller is reversed (by its style,
+  else by trying a step below zero) and counts positions from the top either
+  way; only a reversed scroller also gets smooth scrolling held off for the
+  walk, so the plain path the phone uses is untouched. The "moves" probe tries
+  below zero on a reversed scroller instead of calling it stuck; the trace
+  says "reversed"; the census prints flex-direction. A virtualised
+  column-reverse mock: 4 of 40 before, 40 of 40 in order after, with and
+  without smooth scrolling. Unverified on the real page — if this is not the
+  layout, the next diagnosis will say flex-direction and "reversed" or not.
